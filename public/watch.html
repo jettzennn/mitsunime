@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tonton — Mitsunime</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css?v=1.5.0">
+</head>
+<body>
+  <div id="site-header-slot"></div>
+  <main class="page-main" id="watch-main">
+    <div class="shell">
+      <div id="page-banner" hidden></div>
+      <div class="watch-wrap">
+        <div class="player" id="player">
+          <video id="player-video" controls playsinline preload="metadata" hidden></video>
+          <iframe id="player-iframe" title="Pemutar video" allow="autoplay; fullscreen; encrypted-media" allowfullscreen></iframe>
+          <div class="player__overlay" id="player-overlay" hidden></div>
+        </div>
+        <div class="watch-info">
+          <h1 id="watch-title">Memuat…</h1>
+          <p class="watch-ep" id="watch-ep-title"></p>
+          <div class="watch-controls">
+            <div class="lang-tabs" id="lang-tabs" role="tablist" aria-label="Bahasa subtitle">
+              <button class="lang-tab is-active" type="button" data-lang="sub" role="tab" aria-selected="true">SUB</button>
+              <button class="lang-tab" type="button" data-lang="dub" role="tab" aria-selected="false">DUB</button>
+            </div>
+            <label class="watch-select">
+              <span class="sr-only">Pilih server</span>
+              <select id="server-select" aria-label="Pilih server"></select>
+            </label>
+            <div class="server-note" id="server-switch">
+              <span class="dot"></span>
+              <span>Server: <strong id="server-name">—</strong></span>
+              <span id="server-note"></span>
+              <button class="btn btn-ghost btn-sm" id="btn-change-server" type="button">Ganti Server</button>
+            </div>
+          </div>
+          <div class="hd-controls" id="hd-controls" hidden>
+            <label class="watch-select">
+              <span class="sr-only">Subtitle</span>
+              <select id="sub-select" aria-label="Pilih subtitle"></select>
+            </label>
+            <label class="watch-select">
+              <span class="sr-only">Kualitas video</span>
+              <select id="quality-select" aria-label="Pilih kualitas video"></select>
+            </label>
+            <button class="btn btn-ghost btn-sm" id="btn-skip-intro" type="button" hidden>Lewati Intro</button>
+            <button class="btn btn-ghost btn-sm" id="btn-skip-outro" type="button" hidden>Lewati Outro</button>
+            <p class="sub-status" id="sub-status" role="status"></p>
+          </div>
+          <div class="watch-nav">
+            <button class="btn btn-ghost" id="btn-prev" type="button">← Episode Sebelumnya</button>
+            <button class="btn btn-primary" id="btn-next" type="button">Episode Berikutnya →</button>
+          </div>
+        </div>
+      </div>
+      <section class="section">
+        <div class="section__head">
+          <h2 class="section-title"><span class="accent-word">Daftar</span> Episode</h2>
+          <span class="muted" id="ep-count"></span>
+        </div>
+        <div class="episode-tools">
+          <select id="ep-jump-select" aria-label="Lompat ke episode"></select>
+          <span class="muted small" id="ep-jump-info"></span>
+          <button class="btn btn-ghost btn-sm" id="btn-ep-sort" type="button">Urutan: Naik</button>
+        </div>
+        <div class="episode-list" id="episode-list"></div>
+        <div style="margin-top:16px;text-align:center">
+          <button class="btn btn-ghost" id="btn-more-episodes" type="button" hidden>Muat Lebih Banyak</button>
+        </div>
+      </section>
+      <section class="section" id="sec-related" hidden>
+        <div class="section__head">
+          <h2 class="section-title"><span class="accent-word">Anime</span> Terkait</h2>
+        </div>
+        <div class="rail-wrap">
+          <button class="rail-arrow rail-arrow--left" type="button" data-rail="rail-related" aria-label="Geser ke kiri"></button>
+          <div class="rail" id="rail-related"></div>
+          <button class="rail-arrow rail-arrow--right" type="button" data-rail="rail-related" aria-label="Geser ke kanan"></button>
+        </div>
+      </section>
+    </div>
+    <div class="autonext-toast" id="autonext-toast" hidden>
+      <span>Episode berikutnya mulai dalam <strong id="autonext-count">5</strong> detik</span>
+      <button class="btn btn-primary btn-sm" id="btn-autonext-now" type="button">Putar Sekarang</button>
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-autonext" type="button">Batalkan</button>
+    </div>
+  </main>
+  <div id="site-footer-slot"></div>
+  <script src="/js/api.js?v=1.5.0"></script>
+  <script src="/js/common.js?v=1.4.0"></script>
+  <script src="/js/storage.js?v=1.3.2"></script>
+  <script src="/js/subs.js?v=1.5.0"></script>
+  <script src="/js/watch.js?v=1.5.0"></script>
+</body>
+</html>

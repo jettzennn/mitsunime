@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Halaman ini TIDAK boleh terindeks mesin pencari. -->
+  <meta name="robots" content="noindex, nofollow">
+  <title>Admin — Mitsunime</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css?v=1.3.2">
+  <link rel="stylesheet" href="/css/admin.css?v=1.3.2">
+</head>
+<body>
+  <!-- Halaman login admin (tampil bila belum login sebagai admin) -->
+  <div id="admin-login" hidden>
+    <main style="min-height:100vh;display:grid;place-items:center;padding:16px">
+      <div class="form-panel">
+        <h1>Masuk Admin</h1>
+        <p class="muted" style="font-size:14px">Hanya untuk pengelola Mitsunime.</p>
+        <form id="form-admin-login" novalidate>
+          <div class="field">
+            <label for="admin-username">Username atau Email</label>
+            <input id="admin-username" type="text" autocomplete="username" placeholder="Username atau Email" required>
+          </div>
+          <div class="field">
+            <label for="admin-password">Password</label>
+            <div class="pw-wrap">
+              <input id="admin-password" type="password" autocomplete="current-password" required>
+              <button class="pw-toggle" type="button" aria-label="Lihat password" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+            </div>
+          </div>
+          <p class="form-error" id="admin-login-error" role="alert"></p>
+          <button class="btn btn-primary btn-block" type="submit">Masuk</button>
+        </form>
+      </div>
+    </main>
+  </div>
+
+  <!-- Dashboard admin -->
+  <div id="admin-app" hidden>
+    <div class="admin-shell">
+      <aside class="admin-sidebar" id="admin-sidebar" aria-label="Menu admin">
+        <div class="admin-logo">Mitsunime</div>
+        <nav class="admin-nav" id="admin-nav">
+          <a href="#ringkasan" data-section="ringkasan" class="is-active">Ringkasan</a>
+          <a href="#transaksi" data-section="transaksi">Transaksi</a>
+          <a href="#pengguna" data-section="pengguna">Pengguna</a>
+          <a href="#judul" data-section="judul">Judul</a>
+          <a href="#paket" data-section="paket">Paket</a>
+          <a href="#diskon" data-section="diskon">Diskon</a>
+          <a href="#aksesoris" data-section="aksesoris">Aksesori</a>
+          <a href="#pengaturan" data-section="pengaturan">Pengaturan</a>
+          <a href="#audit" data-section="audit">Log Audit</a>
+        </nav>
+      </aside>
+      <div class="admin-main">
+        <div class="admin-top">
+          <button class="header-icon-btn hamburger-admin" id="btn-admin-drawer" type="button" aria-label="Buka menu admin">☰</button>
+          <div>
+            <h1 id="admin-page-title">Ringkasan</h1>
+            <span class="muted">Dashboard Admin</span>
+          </div>
+          <button class="btn btn-danger btn-sm" id="btn-admin-logout" type="button">Keluar</button>
+        </div>
+
+        <section data-panel="ringkasan">
+          <div id="summary-notice" style="margin-bottom:16px"></div>
+          <div class="admin-cards" id="summary-cards"></div>
+          <div class="admin-panels">
+            <div class="admin-panel">
+              <h2>Transaksi Terbaru Menunggu</h2>
+              <div id="summary-pending"></div>
+            </div>
+            <div class="admin-panel">
+              <h2>Aktivitas Terakhir</h2>
+              <div id="summary-audit"></div>
+            </div>
+          </div>
+        </section>
+
+        <section data-panel="transaksi" hidden>
+          <div class="admin-filter" id="tx-filters">
+            <button class="chip is-active" type="button" data-status="pending">Menunggu</button>
+            <button class="chip" type="button" data-status="approved">Disetujui</button>
+            <button class="chip" type="button" data-status="rejected">Ditolak</button>
+            <button class="chip" type="button" data-status="all">Semua</button>
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead><tr><th>Pengguna</th><th>Paket</th><th>Jumlah</th><th>Bayar</th><th>Status</th><th>Tanggal</th><th>Aksi</th></tr></thead>
+              <tbody id="tx-rows"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="tx-pagination" hidden>
+            <button class="btn btn-ghost btn-sm" id="tx-prev" type="button">Sebelumnya</button>
+            <span class="page-info" id="tx-page-info"></span>
+            <button class="btn btn-ghost btn-sm" id="tx-next" type="button">Berikutnya</button>
+          </div>
+        </section>
+
+        <section data-panel="pengguna" hidden>
+          <div class="admin-search">
+            <input type="search" id="user-search" placeholder="Cari username atau email..." aria-label="Cari pengguna" autocomplete="off">
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead><tr><th>Username</th><th>Email</th><th>Status</th><th>Level</th><th>Premium Sampai</th><th>Terdaftar</th><th>Aksi</th></tr></thead>
+              <tbody id="user-rows"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="user-pagination" hidden>
+            <button class="btn btn-ghost btn-sm" id="user-prev" type="button">Sebelumnya</button>
+            <span class="page-info" id="user-page-info"></span>
+            <button class="btn btn-ghost btn-sm" id="user-next" type="button">Berikutnya</button>
+          </div>
+        </section>
+
+        <section data-panel="judul" hidden>
+          <p class="lead">Cari judul, lalu centang <strong>Sub Indo</strong> hanya bila sudah diverifikasi manual. Centang <strong>Premium</strong> hanya dicatat sebagai data di v1 — tidak mengunci konten apa pun.</p>
+          <div class="admin-search">
+            <input type="search" id="anime-search" placeholder="Cari judul anime..." aria-label="Cari judul anime" autocomplete="off">
+          </div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead><tr><th>Poster</th><th>Judul</th><th>Tahun</th><th>Skor</th><th>Sub Indo</th><th>Premium</th><th></th></tr></thead>
+              <tbody id="anime-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section data-panel="paket" hidden>
+          <button class="btn btn-primary" id="btn-add-plan" type="button">Tambah Paket</button>
+          <div id="plan-list" style="margin-top:16px"></div>
+        </section>
+
+        <section data-panel="diskon" hidden>
+          <p class="lead">Kode diskon persen untuk paket Premium. Pembeli memasukkan kode di halaman Premium sebelum transaksi dibuat — harga yang dibayar sudah harga setelah diskon.</p>
+          <button class="btn btn-primary" id="btn-add-discount" type="button">Tambah Kode Diskon</button>
+          <div class="admin-table-wrap" style="margin-top:16px">
+            <table class="admin-table">
+              <thead><tr><th>Kode</th><th>Diskon</th><th>Paket</th><th>Terpakai</th><th>Kedaluwarsa</th><th>Aktif</th><th>Aksi</th></tr></thead>
+              <tbody id="discount-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section data-panel="aksesoris" hidden>
+          <button class="btn btn-primary" id="btn-add-accessory" type="button">Tambah Aksesori</button>
+          <div class="admin-table-wrap" style="margin-top:16px">
+            <table class="admin-table">
+              <thead><tr><th>Kode</th><th>Nama</th><th>Jenis</th><th>Premium</th><th>Aktif</th><th>Aksi</th></tr></thead>
+              <tbody id="accessory-rows"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section data-panel="pengaturan" hidden>
+          <div class="form-panel" style="margin-inline:0;max-width:520px">
+            <h2 style="font-size:18px">Pengaturan</h2>
+            <div class="field">
+              <label for="set-premium-days">Episode baru premium (hari)</label>
+              <input id="set-premium-days" type="number" min="1" max="365" inputmode="numeric">
+              <p class="field__hint">Catatan: saat ini tidak mengunci konten apa pun — Premium v1 hanya memberi aksesori profil.</p>
+            </div>
+            <div class="field">
+              <label for="set-payment-methods">Metode bayar</label>
+              <input id="set-payment-methods" type="text" placeholder="Midtrans">
+              <p class="field__hint">Daftar metode dipisah koma. Gateway yang dipakai saat ini: Midtrans.</p>
+            </div>
+            <div class="field">
+              <label for="set-payment-gateway">Cara bayar utama</label>
+              <select id="set-payment-gateway">
+                <option value="manual">QRIS Manual — pembeli pindai kode QRIS, admin memeriksa bukti (utama)</option>
+                <option value="midtrans">Midtrans — pembayaran otomatis lewat gateway</option>
+              </select>
+              <p class="field__hint">Cara bayar yang ditampilkan di halaman Premium. Kedua alur tetap berfungsi apa pun pilihannya.</p>
+            </div>
+            <p class="form-error" id="settings-error" role="alert"></p>
+            <p class="form-success" id="settings-success" role="status"></p>
+            <button class="btn btn-primary btn-block" id="btn-save-settings" type="button">Simpan Pengaturan</button>
+          </div>
+          <div class="form-panel" style="margin-inline:0;max-width:520px;margin-top:16px">
+            <h2 style="font-size:18px">Kode QRIS — Pembayaran Manual</h2>
+            <p class="muted" style="font-size:14px">Unggah gambar kode QRIS (dari DANA Bisnis atau penyedia QRIS mana pun) dan nama merchant. Kode ini ditampilkan di halaman Premium saat cara bayar utama adalah QRIS Manual.</p>
+            <figure class="qris-figure qris-figure--admin" id="admin-qris-figure" hidden>
+              <img class="qris-img" id="admin-qris-img" src="" alt="Kode QRIS yang tersimpan">
+              <figcaption class="qris-merchant" id="admin-qris-merchant"></figcaption>
+            </figure>
+            <p class="muted" id="admin-qris-status" style="font-size:14px">Belum ada kode QRIS yang tersimpan.</p>
+            <div class="field">
+              <label for="set-qris-merchant">Nama merchant</label>
+              <input id="set-qris-merchant" type="text" maxlength="100" placeholder="Contoh: Toko Faygo" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="set-qris-image">Gambar kode QRIS (JPG/PNG/WebP, maks. 2 MB)</label>
+              <input id="set-qris-image" type="file" accept="image/png,image/jpeg,image/webp">
+              <p class="field__hint">Boleh mengganti gambar saja atau nama saja — keduanya tidak wajib diisi bersamaan.</p>
+            </div>
+            <img class="proof-preview" id="admin-qris-preview" hidden alt="Pratinjau kode QRIS baru">
+            <p class="form-error" id="qris-error" role="alert"></p>
+            <p class="form-success" id="qris-success" role="status"></p>
+            <button class="btn btn-primary btn-block" id="btn-save-qris" type="button">Simpan Kode QRIS</button>
+          </div>
+        </section>
+
+        <section data-panel="audit" hidden>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead><tr><th>Waktu</th><th>Admin</th><th>Aksi</th><th>Target</th><th>Detail</th></tr></thead>
+              <tbody id="audit-rows"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="audit-pagination" hidden>
+            <button class="btn btn-ghost btn-sm" id="audit-prev" type="button">Sebelumnya</button>
+            <span class="page-info" id="audit-page-info"></span>
+            <button class="btn btn-ghost btn-sm" id="audit-next" type="button">Berikutnya</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/api.js?v=1.3.2"></script>
+  <script src="/js/common.js?v=1.4.0"></script>
+  <script src="/js/storage.js?v=1.3.2"></script>
+  <script src="/js/admin.js?v=1.3.2"></script>
+</body>
+</html>

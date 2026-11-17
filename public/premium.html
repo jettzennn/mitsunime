@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paket Premium — Mitsunime</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css?v=1.3.2">
+</head>
+<body>
+  <div id="site-header-slot"></div>
+  <main class="page-main">
+    <div class="shell">
+      <div id="page-banner" hidden></div>
+      <section style="margin-top:24px">
+        <h1 class="page-title">Paket Premium</h1>
+        <p class="lead">Premium Mitsunime memberi aksesori profil eksklusif: border, background, bingkai avatar, lencana, dan efek nama. Semua episode tetap bisa ditonton siapa pun yang sudah login — Premium tidak mengunci konten apa pun.</p>
+        <div id="premium-status" style="margin-top:16px"></div>
+      </section>
+      <section>
+        <div class="plan-grid" id="plan-grid"></div>
+      </section>
+      <section id="pay-section" hidden>
+        <!-- Kode diskon (v1.3.0): satu kotak bersama untuk kedua alur.
+             Kode dicek ke server sebelum transaksi dibuat, jadi harga
+             yang dibayar sudah harga setelah diskon. -->
+        <div class="pay-box" id="discount-box" hidden>
+          <h3>Kode Diskon</h3>
+          <p class="muted" id="discount-plan-line" style="font-size:14px"></p>
+          <div class="field" style="margin-top:12px">
+            <label for="discount-code">Kode diskon (opsional)</label>
+            <input id="discount-code" type="text" maxlength="32" placeholder="Contoh: HEMAT10" autocomplete="off" style="text-transform:uppercase">
+          </div>
+          <p class="form-success" id="discount-success" role="status"></p>
+          <p class="form-error" id="discount-error" role="alert"></p>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:12px">
+            <button class="btn btn-ghost" id="btn-apply-discount" type="button">Pakai Kode</button>
+            <button class="btn btn-ghost" id="btn-clear-discount" type="button" hidden>Hapus Kode</button>
+            <button class="btn btn-primary" id="btn-discount-continue" type="button" hidden>Lanjut ke Pembayaran</button>
+          </div>
+        </div>
+        <div class="pay-box" id="pay-midtrans" hidden>
+          <h3 id="pay-title">Selesaikan Pembayaran</h3>
+          <p class="muted" id="pay-desc" style="font-size:14px"></p>
+          <ol class="pay-steps">
+            <li>Buka halaman pembayaran Midtrans lewat tombol di bawah.</li>
+            <li>Selesaikan pembayaran di sana.</li>
+            <li>Kembali ke halaman ini, lalu tekan "Cek Status Pembayaran".</li>
+            <li>Bila pembayaran terkonfirmasi, transaksi menunggu persetujuan admin — Premium aktif setelah admin menyetujui.</li>
+          </ol>
+          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">
+            <a class="btn btn-primary" id="btn-pay-link" href="#" target="_blank" rel="noopener">Buka Halaman Pembayaran</a>
+            <button class="btn btn-ghost" id="btn-confirm-pay" type="button">Cek Status Pembayaran</button>
+          </div>
+          <p class="form-success" id="pay-message" role="status"></p>
+          <p class="form-error" id="pay-error" role="alert"></p>
+        </div>
+        <div class="pay-box" id="pay-manual" hidden>
+          <h3 id="manual-title">Bayar dengan QRIS</h3>
+          <p class="muted" id="manual-desc" style="font-size:14px"></p>
+          <figure class="qris-figure" id="manual-qris-figure">
+            <img class="qris-img" id="manual-qris-img" src="/api/premium/qris/image" alt="Kode QRIS untuk pembayaran Premium">
+            <figcaption class="qris-merchant" id="manual-qris-merchant"></figcaption>
+          </figure>
+          <p class="form-error" id="manual-qris-missing" role="alert" hidden>Kode QRIS belum diatur admin. Minta admin mengatur kode QRIS dulu, atau coba lagi nanti.</p>
+          <ol class="pay-steps">
+            <li>Pindai kode QRIS di atas dengan aplikasi pembayaran apa pun (DANA, GoPay, OVO, m-banking).</li>
+            <li>Bayar tepat sesuai jumlah paket.</li>
+            <li>Isi referensi atau nama pengirim (opsional) dan unggah bukti bayar (JPG/PNG/WebP, maks. 2 MB).</li>
+            <li>Tekan "Kirim Transaksi". Premium aktif setelah admin memeriksa bukti dan menyetujui.</li>
+          </ol>
+          <form id="form-manual-tx" novalidate>
+            <div class="field">
+              <label for="manual-proof-ref">Referensi / nama pengirim (opsional)</label>
+              <input id="manual-proof-ref" type="text" maxlength="200" placeholder="Contoh: Faygo / 0812xxxx / nomor referensi DANA" autocomplete="off">
+            </div>
+            <div class="field">
+              <label for="manual-proof-file">Bukti bayar (JPG/PNG/WebP, maks. 2 MB)</label>
+              <input id="manual-proof-file" type="file" accept="image/png,image/jpeg,image/webp">
+              <p class="field__hint">Bukti membantu admin memeriksa pembayaran kamu. Bila tidak ada bukti, admin memeriksa dari mutasi di aplikasi pembayarannya.</p>
+            </div>
+            <img class="proof-preview" id="manual-proof-preview" hidden alt="Pratinjau bukti bayar">
+            <p class="form-success" id="manual-message" role="status"></p>
+            <p class="form-error" id="manual-error" role="alert"></p>
+            <button class="btn btn-primary btn-block" id="btn-manual-submit" type="submit">Kirim Transaksi</button>
+          </form>
+        </div>
+      </section>
+      <section class="section" id="sec-my-tx" hidden>
+        <div class="section__head">
+          <h2 class="section-title"><span class="accent-word">Transaksi</span> Saya</h2>
+        </div>
+        <div class="tx-list" id="tx-list"></div>
+      </section>
+    </div>
+  </main>
+  <div id="site-footer-slot"></div>
+  <script src="/js/api.js?v=1.3.2"></script>
+  <script src="/js/common.js?v=1.4.0"></script>
+  <script src="/js/storage.js?v=1.3.2"></script>
+  <script src="/js/premium.js?v=1.3.2"></script>
+</body>
+</html>

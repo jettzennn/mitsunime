@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mitsunime — Streaming Anime Bahasa Indonesia</title>
+  <meta name="description" content="Mitsunime, streaming anime berbahasa Indonesia.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css?v=1.3.2">
+</head>
+<body>
+  <div id="site-header-slot"></div>
+  <main class="page-main">
+    <div class="shell">
+      <div id="page-banner" hidden></div>
+      <section class="hero" id="hero" aria-label="Anime pilihan" hidden>
+        <div id="hero-slides"></div>
+        <div class="hero__controls">
+          <button class="hero__arrow" id="hero-prev" type="button" aria-label="Slide sebelumnya"></button>
+          <button class="hero__arrow" id="hero-next" type="button" aria-label="Slide berikutnya"></button>
+          <div class="hero__progress" aria-hidden="true"><i id="hero-progress" style="width:20%"></i></div>
+          <span class="hero__page" id="hero-page">01</span>
+          <div class="hero__dots" id="hero-dots" role="tablist" aria-label="Pilih slide"></div>
+        </div>
+        <div class="hero__thumbs" id="hero-thumbs"></div>
+      </section>
+
+      <section class="section" id="sec-continue" hidden aria-label="Lanjutkan menonton">
+        <div class="section__head">
+          <h2 class="section-title"><span class="accent-word">Lanjutkan</span> Menonton</h2>
+        </div>
+        <div class="rail-wrap">
+          <button class="rail-arrow rail-arrow--left" type="button" data-rail="rail-continue" aria-label="Geser ke kiri"></button>
+          <div class="rail" id="rail-continue"></div>
+          <button class="rail-arrow rail-arrow--right" type="button" data-rail="rail-continue" aria-label="Geser ke kanan"></button>
+        </div>
+      </section>
+
+      <section class="section" aria-label="Episode terbaru">
+        <div class="section__head">
+          <h2 class="section-title"><span class="accent-word">Episode</span> Terbaru</h2>
+          <a class="btn-text" href="/search.html">Lihat Semua</a>
+        </div>
+        <div class="rail-wrap">
+          <button class="rail-arrow rail-arrow--left" type="button" data-rail="rail-recent" aria-label="Geser ke kiri"></button>
+          <div class="rail" id="rail-recent"></div>
+          <button class="rail-arrow rail-arrow--right" type="button" data-rail="rail-recent" aria-label="Geser ke kanan"></button>
+        </div>
+      </section>
+
+      <section class="section" aria-label="Rating tertinggi">
+        <div class="section__head">
+          <h2 class="section-title"><span class="accent-word">Rating</span> Tertinggi</h2>
+          <a class="btn-text" href="/search.html?sort=top">Lihat Semua</a>
+        </div>
+        <div class="poster-grid" id="grid-top"></div>
+      </section>
+
+      <section class="section" aria-label="Sedang tayang">
+        <div class="section__head">
+          <h2 class="section-title"><span class="accent-word">Sedang</span> Tayang</h2>
+          <a class="btn-text" href="/search.html?status=Currently%20Airing">Lihat Semua</a>
+        </div>
+        <div class="rail-wrap">
+          <button class="rail-arrow rail-arrow--left" type="button" data-rail="rail-airing" aria-label="Geser ke kiri"></button>
+          <div class="rail" id="rail-airing"></div>
+          <button class="rail-arrow rail-arrow--right" type="button" data-rail="rail-airing" aria-label="Geser ke kanan"></button>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div id="site-footer-slot"></div>
+  <script src="/js/api.js?v=1.3.2"></script>
+  <script src="/js/common.js?v=1.4.0"></script>
+  <script src="/js/storage.js?v=1.3.2"></script>
+  <script src="/js/home.js?v=1.3.2"></script>
+</body>
+</html>

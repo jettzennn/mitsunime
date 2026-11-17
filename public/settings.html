@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setelan Akun — Mitsunime</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css?v=1.4.0">
+</head>
+<body>
+  <div id="site-header-slot"></div>
+  <main class="page-main">
+    <div class="shell">
+      <div id="page-banner" hidden></div>
+      <!-- Setelan Akun (v1.3.3): urusan AKUN ala Google, dipisah
+           dari profil web. Dibuka dari container akun di kaki
+           sidebar: opsi "Ganti Email" mendarat di #ganti-email,
+           "Ganti Password" di #ganti-password (settings.js
+           menggulir + memfokuskan bloknya). Keluar TIDAK ada di
+           sini — Keluar ada di container sidebar yang sama.
+           Halaman ini wajib login: settings.js mengarahkan tamu
+           ke halaman masuk dengan location.replace. -->
+      <div id="settings-root" hidden>
+        <section style="margin-top:24px">
+          <div class="section__head">
+            <h1 class="section-title"><span class="accent-word">Setelan</span> Akun</h1>
+            <a class="btn-text" href="/account.html">Kembali ke Profil</a>
+          </div>
+          <p class="muted" style="font-size:14px" id="settings-account-line"></p>
+        </section>
+        <div class="account-sections">
+          <section id="ganti-email">
+            <div class="settings-block">
+              <h3>Ganti Email</h3>
+              <p class="muted" style="font-size:14px">Email hanya bisa diganti dari sini. Kode verifikasi baru dikirim ke email baru (berlaku 1 menit).</p>
+              <div class="form-panel" style="margin-inline:0;max-width:520px">
+                <form id="form-settings-change-email" novalidate>
+                  <div class="field">
+                    <label for="settings-new-email">Email baru</label>
+                    <input id="settings-new-email" type="email" placeholder="nama@email.com" autocomplete="email">
+                  </div>
+                  <div class="field">
+                    <label for="settings-change-email-password">Password akun</label>
+                    <div class="pw-wrap">
+                      <input id="settings-change-email-password" type="password" autocomplete="current-password" required>
+                      <button class="pw-toggle" type="button" aria-label="Lihat password" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </div>
+                  </div>
+                  <p class="form-error" id="settings-change-email-error" role="alert"></p>
+                  <p class="form-success" id="settings-change-email-success" role="status"></p>
+                  <button class="btn btn-primary btn-block" type="submit">Kirim kode ke email baru</button>
+                </form>
+              </div>
+            </div>
+          </section>
+          <section id="ganti-password">
+            <div class="settings-block">
+              <h3>Ubah Password</h3>
+              <div class="form-panel" style="margin-inline:0;max-width:520px">
+                <form id="form-password" novalidate>
+                  <div class="field">
+                    <label for="pw-current">Password saat ini</label>
+                    <div class="pw-wrap">
+                      <input id="pw-current" type="password" autocomplete="current-password" required>
+                      <button class="pw-toggle" type="button" aria-label="Lihat password" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label for="pw-new">Password baru</label>
+                    <div class="pw-wrap">
+                      <input id="pw-new" type="password" placeholder="Minimal 8 karakter" autocomplete="new-password" required>
+                      <button class="pw-toggle" type="button" aria-label="Lihat password" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                    </div>
+                  </div>
+                  <p class="form-error" id="pw-error" role="alert"></p>
+                  <p class="form-success" id="pw-success" role="status"></p>
+                  <button class="btn btn-primary btn-block" type="submit">Ubah Password</button>
+                </form>
+                <p class="muted small" style="margin-top:16px">Sesi bisa dicabut admin dari dashboard bila diperlukan.</p>
+              </div>
+            </div>
+          </section>
+          <section id="sec-settings-transactions">
+            <div class="settings-block">
+              <h3>Riwayat Transaksi</h3>
+              <div class="tx-list" id="tx-list"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+  <div id="site-footer-slot"></div>
+  <script src="/js/api.js?v=1.4.0"></script>
+  <script src="/js/common.js?v=1.4.0"></script>
+  <script src="/js/storage.js?v=1.4.0"></script>
+  <script src="/js/settings.js?v=1.4.0"></script>
+</body>
+</html>

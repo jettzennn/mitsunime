@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Akun Saya — Mitsunime</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css?v=1.4.0">
+</head>
+<body>
+  <div id="site-header-slot"></div>
+  <main class="page-main">
+    <div class="shell">
+      <div id="page-banner" hidden></div>
+      <div id="auth-root" style="margin-top:24px" hidden>
+        <div class="form-panel" id="login-panel">
+          <h1 id="auth-title">Masuk</h1>
+          <p class="muted" style="font-size:14px">Masuk untuk menonton, menyimpan Daftar Saya, dan melanjutkan tontonan.</p>
+          <form id="form-login" novalidate>
+            <div class="field">
+              <label for="login-username" id="login-identifier-label">Email</label>
+              <input id="login-username" type="email" placeholder="nama@email.com" autocomplete="email" required>
+            </div>
+            <div class="field" id="field-email" hidden>
+              <label for="login-email">Email (opsional)</label>
+              <input id="login-email" type="email" placeholder="nama@email.com" autocomplete="email">
+            </div>
+            <div class="field">
+              <label for="login-password">Password</label>
+              <div class="pw-wrap">
+                <input id="login-password" type="password" placeholder="Minimal 8 karakter" autocomplete="current-password" required>
+                <button class="pw-toggle" type="button" aria-label="Lihat password" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+              </div>
+            </div>
+            <p class="form-error" id="auth-error" role="alert"></p>
+            <p class="form-success" id="auth-success" role="status"></p>
+            <button class="btn btn-primary btn-block" type="submit" id="btn-auth">Masuk</button>
+            <p class="form-switch" id="forgot-row"><button class="btn-text" type="button" id="btn-forgot-password">Lupa password?</button></p>
+          </form>
+          <p class="form-switch" id="auth-switch"></p>
+        </div>
+        <!-- Verifikasi email OTP (v1.3.0). Hanya tampil bila server
+             mengembalikan verification_required (SMTP terkonfigurasi);
+             bila SMTP tidak diatur, alur daftar/masuk tetap seperti
+             v1.2.0 dan panel ini tidak pernah muncul. -->
+        <div class="form-panel" id="verify-root" hidden>
+          <h1>Verifikasi Email</h1>
+          <p class="muted" style="font-size:14px" id="verify-desc">Kode verifikasi 6 digit sudah dikirim ke email kamu.</p>
+          <form id="form-verify" novalidate>
+            <div class="field" id="field-verify-email" hidden>
+              <label for="verify-email-input">Email</label>
+              <input id="verify-email-input" type="email" placeholder="nama@email.com" autocomplete="email">
+            </div>
+            <div class="field">
+              <label>Kode verifikasi</label>
+              <div class="otp-boxes" id="otp-boxes">
+                <input class="otp-box" type="text" inputmode="numeric" autocomplete="one-time-code" aria-label="Digit 1" required>
+                <input class="otp-box" type="text" inputmode="numeric" autocomplete="off" aria-label="Digit 2">
+                <input class="otp-box" type="text" inputmode="numeric" autocomplete="off" aria-label="Digit 3">
+                <input class="otp-box" type="text" inputmode="numeric" autocomplete="off" aria-label="Digit 4">
+                <input class="otp-box" type="text" inputmode="numeric" autocomplete="off" aria-label="Digit 5">
+                <input class="otp-box" type="text" inputmode="numeric" autocomplete="off" aria-label="Digit 6">
+              </div>
+            </div>
+            <p class="form-error" id="verify-error" role="alert"></p>
+            <p class="form-success" id="verify-success" role="status"></p>
+            <button class="btn btn-primary btn-block" type="submit" id="btn-verify">Verifikasi</button>
+          </form>
+          <p class="form-switch"><button class="btn-text" type="button" id="btn-resend-code">Kirim ulang kode</button></p>
+          <p class="form-switch"><button class="btn-text" type="button" id="btn-change-email">Ganti email</button></p>
+          <p class="form-switch"><a href="/account.html?mode=login" id="verify-back">Kembali masuk</a></p>
+          <!-- Ganti email (v1.3.1): hanya kolom email BARU (kosong) +
+               password akun yang ditampilkan — username sudah tersimpan
+               di akun, tidak perlu diketik ulang. OTP lama hangus dan
+               kode baru dikirim ke email baru. -->
+          <form id="form-change-email" novalidate hidden>
+            <div class="field">
+              <label for="change-email-new">Email baru</label>
+              <input id="change-email-new" type="email" placeholder="nama@email.com" autocomplete="email">
+            </div>
+            <div class="field">
+              <label for="change-email-password">Password akun</label>
+              <div class="pw-wrap">
+                <input id="change-email-password" type="password" autocomplete="current-password" required>
+                <button class="pw-toggle" type="button" aria-label="Lihat password" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+              </div>
+            </div>
+            <p class="form-error" id="change-email-error" role="alert"></p>
+            <p class="form-success" id="change-email-success" role="status"></p>
+            <button class="btn btn-primary btn-block" type="submit" id="btn-change-email-submit">Kirim kode ke email baru</button>
+            <p class="form-switch"><button class="btn-text" type="button" id="btn-change-email-cancel">Batalkan</button></p>
+          </form>
+        </div>
+        <!-- Tambah email (v1.3.1): tampil bila login ditolak 403 dengan
+             code 'email_required' (akun tanpa email, SMTP aktif).
+             Bila SMTP tidak diatur, alur login tetap seperti v1.2.0
+             dan panel ini tidak pernah muncul. -->
+        <div class="form-panel" id="add-email-root" hidden>
+          <h1>Tambah Email</h1>
+          <p class="muted" style="font-size:14px" id="add-email-desc">Akun kamu belum punya email. Tambahkan email untuk menerima kode verifikasi.</p>
+          <form id="form-add-email" novalidate>
+            <div class="field">
+              <label for="add-email-input">Email</label>
+              <input id="add-email-input" type="email" placeholder="nama@email.com" autocomplete="email" required>
+            </div>
+            <div class="field">
+              <label for="add-email-password">Password akun</label>
+              <div class="pw-wrap">
+                <input id="add-email-password" type="password" autocomplete="current-password" required>
+                <button class="pw-toggle" type="button" aria-label="Lihat password" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+              </div>
+            </div>
+            <p class="form-error" id="add-email-error" role="alert"></p>
+            <p class="form-success" id="add-email-success" role="status"></p>
+            <button class="btn btn-primary btn-block" type="submit" id="btn-add-email">Simpan Email &amp; Kirim Kode</button>
+          </form>
+          <p class="form-switch"><a href="/account.html?mode=login">Kembali masuk</a></p>
+        </div>
+        <!-- Lupa password (satu tahap saja): isi email, server
+             mengirim email berisi tombol "Reset Password" yang
+             menaut balik ke halaman ini (?mode=reset&email&code).
+             Respons server selalu generik (tidak membocorkan apakah
+             email terdaftar). TIDAK ada tombol kirim ulang terpisah —
+             tombol "Kirim Tautan Reset" yang sama ditekan lagi sesudah
+             cooldown 60 detik bila tautan kedaluwarsa. -->
+        <div class="form-panel" id="reset-root" hidden>
+          <h1>Lupa Password</h1>
+          <p class="muted" style="font-size:14px" id="reset-desc">Masukkan email kamu, kami kirimkan tautan reset password.</p>
+          <form id="form-forgot" novalidate>
+            <div class="field">
+              <label for="reset-email">Email</label>
+              <input id="reset-email" type="email" placeholder="nama@email.com" autocomplete="email" required>
+            </div>
+            <p class="form-error" id="forgot-error" role="alert"></p>
+            <p class="form-success" id="forgot-success" role="status"></p>
+            <button class="btn btn-primary btn-block" type="submit" id="btn-forgot">Kirim Tautan Reset</button>
+          </form>
+          <p class="form-switch"><a href="/account.html?mode=login">Kembali masuk</a></p>
+        </div>
+        <!-- Atur ulang password dari tautan email (?mode=reset):
+             panel ini HANYA berisi kolom password baru — kode reset
+             dibaca dari URL, tidak pernah diketik user. Bila tautan
+             mati (salah/kedaluwarsa/sudah dipakai), isi panel diganti
+             pesan + tombol ke form lupa password. -->
+        <div class="form-panel" id="reset-link-root" hidden>
+          <h1>Atur Ulang Password</h1>
+          <p class="muted" style="font-size:14px" id="reset-link-desc">Buat password baru untuk akun kamu.</p>
+          <form id="form-reset-link" novalidate>
+            <div class="field">
+              <label for="reset-link-password">Password baru</label>
+              <div class="pw-wrap">
+                <input id="reset-link-password" type="password" placeholder="Minimal 8 karakter" autocomplete="new-password" required>
+                <button class="pw-toggle" type="button" aria-label="Lihat password" aria-pressed="false"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+              </div>
+            </div>
+            <p class="form-error" id="reset-link-error" role="alert"></p>
+            <button class="btn btn-primary btn-block" type="submit" id="btn-reset-link">Atur ulang password</button>
+          </form>
+          <div id="reset-link-invalid" hidden>
+            <p class="form-error" role="alert">Tautan reset tidak berlaku atau sudah kedaluwarsa.</p>
+            <button class="btn btn-primary btn-block" type="button" id="btn-reset-link-forgot">Minta tautan baru</button>
+          </div>
+          <p class="form-switch"><a href="/account.html?mode=login">Kembali masuk</a></p>
+        </div>
+      </div>
+      <div id="account-root" hidden>
+        <section style="margin-top:24px" id="profile-section"></section>
+        <div class="account-sections">
+          <section id="sec-favorites">
+            <div class="section__head">
+              <h2 class="section-title"><span class="accent-word">Daftar</span> Saya</h2>
+              <a class="btn-text" href="/favorites.html">Lihat Semua</a>
+            </div>
+            <div class="poster-grid" id="fav-grid"></div>
+          </section>
+          <!-- Riwayat (v1.3.2): kartu anime yang pernah ditonton; klik
+               kartu membuka daftar episode yang ditonton (modal). -->
+          <section id="sec-history">
+            <div class="section__head">
+              <h2 class="section-title"><span class="accent-word">Riwayat</span> Tontonan</h2>
+            </div>
+            <div class="poster-grid" id="history-grid"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+  <div id="site-footer-slot"></div>
+  <script src="/js/api.js?v=1.4.0"></script>
+  <script src="/js/common.js?v=1.4.0"></script>
+  <script src="/js/storage.js?v=1.4.0"></script>
+  <script src="/js/account.js?v=1.4.0"></script>
+</body>
+</html>

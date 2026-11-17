@@ -1,0 +1,87 @@
+/* ============================================================
+   Mitsunime — Dashboard Admin (task-13)
+   Bahasa Dark Lime yang sama, lebih rapat dan tenang: tanpa hero,
+   tanpa artwork besar, hijau limau hanya untuk tombol utama dan
+   status penting. Rute admin TIDAK ditulis di file ini — JS admin
+   membaca alamat dari URL halaman saat ini.
+   ============================================================ */
+[hidden] { display: none !important; }
+
+.admin-shell { display: flex; min-height: 100vh; }
+.admin-sidebar {
+  width: 240px; flex-shrink: 0;
+  background: var(--bg); border-right: 1px solid var(--border);
+  padding: 20px 12px; display: flex; flex-direction: column; gap: 4px;
+  position: sticky; top: 0; height: 100vh;
+}
+.admin-logo { font-family: var(--font-display); font-size: 18px; color: var(--lime); text-transform: uppercase; padding: 4px 12px 16px; }
+.admin-nav a {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 48px; padding: 10px 12px; border-radius: 10px;
+  color: var(--text-2); font-size: 14px; font-weight: 500;
+}
+.admin-nav a.is-active { background: var(--surface-raised); color: var(--lime); font-weight: 700; }
+.admin-nav a:hover { color: var(--text); }
+.admin-main { flex: 1; min-width: 0; padding: 20px clamp(16px, 2.5vw, 32px); }
+.admin-top {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.admin-top h1 { font-size: 20px; font-weight: 700; margin: 0; }
+.admin-top .muted { font-size: 13px; }
+.admin-top .btn { margin-left: auto; }
+.admin-cards { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 20px; }
+@media (min-width: 900px) { .admin-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.admin-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+  padding: 16px;
+}
+.admin-card__label { font-size: 13px; color: var(--text-dim); margin: 0; }
+.admin-card__num { font-family: var(--font-display); font-size: 32px; line-height: 1.1; margin: 6px 0 0; }
+.admin-card__num .chip-status { vertical-align: middle; margin-left: 6px; }
+.admin-panels { display: grid; gap: 16px; grid-template-columns: 1fr; }
+@media (min-width: 1024px) { .admin-panels { grid-template-columns: 1fr 1fr; } }
+.admin-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+.admin-panel h2 { font-size: 16px; margin: 0 0 12px; }
+.admin-panel__row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; border-top: 1px solid var(--border); font-size: 14px;
+}
+.admin-panel__row:first-of-type { border-top: none; }
+.admin-panel__row .grow { flex: 1; min-width: 0; }
+.admin-panel__row .muted { font-size: 13px; }
+.admin-table-wrap { overflow-x: auto; margin: 0 calc(clamp(16px, 2.5vw, 32px) * -1); padding: 0 clamp(16px, 2.5vw, 32px); }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 640px; }
+.admin-table th, .admin-table td {
+  text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.admin-table th { color: var(--text-dim); font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.admin-table tr { min-height: 56px; }
+.admin-table tr.is-pending { background: var(--surface-raised); }
+.admin-table tr.is-pending td:first-child { border-left: 3px solid var(--gold); }
+.admin-table .actions { white-space: nowrap; }
+.admin-table .actions .btn { margin-right: 6px; }
+.admin-table .thumb { width: 40px; height: 60px; object-fit: cover; border-radius: 6px; display: block; }
+.admin-filter { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.admin-search { max-width: 420px; margin-bottom: 16px; }
+.admin-search input {
+  width: 100%; height: 48px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; color: var(--text); padding: 0 16px; font-size: 15px; outline: none;
+}
+.admin-search input:focus { border-color: var(--lime); }
+.admin-search input::placeholder { color: var(--text-dim); }
+.checkbox-cell { display: inline-flex; align-items: center; gap: 8px; }
+.checkbox-cell input[type="checkbox"] { width: 24px; height: 24px; accent-color: var(--lime); cursor: pointer; }
+.admin-note { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+.admin-flags { display: flex; gap: 16px; flex-wrap: wrap; }
+.hamburger-admin { display: inline-flex; }
+@media (min-width: 900px) { .hamburger-admin { display: none; } }
+@media (max-width: 899px) {
+  .admin-sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 61;
+    transform: translateX(-100%); transition: transform 0.2s ease;
+    height: 100dvh;
+  }
+  .admin-sidebar.is-open { transform: translateX(0); }
+}
