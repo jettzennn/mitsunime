@@ -52,6 +52,9 @@ function toggleLocalFavorite(anime) {
     list.unshift({
       id: anime.id,
       title: anime.title || '',
+      /* v1.5.2 item 5: simpan juga judul Jepang supaya favorit tamu
+         (dirender cardHTML) tampil romaji seperti halaman lain. */
+      alternative: anime.alternative || '',
       poster: anime.poster || '',
       score: anime.score || null,
       year: anime.year || null,

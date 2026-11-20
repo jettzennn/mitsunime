@@ -19,7 +19,7 @@ function buildServers(animeRaw, episode, lang) {
   const a = (animeRaw && typeof animeRaw === 'object') ? animeRaw : {};
   const aniId = a.ani_id != null && String(a.ani_id) !== '' ? String(a.ani_id) : null;
   const malId = a.mal_id != null && String(a.mal_id) !== '' ? String(a.mal_id) : null;
-  const out = [{ key: 'hd', name: 'Server HD (Sub Indo)', kind: 'hd' }];
+  const out = [{ key: 'hd', name: 'Server Mitsunime (Sub Indo)', kind: 'hd' }];
   if (!Number.isFinite(epNum) || epNum <= 0) return out;
   const embed = episode && episode.embed_url && typeof episode.embed_url === 'object'
     ? episode.embed_url : {};

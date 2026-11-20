@@ -97,12 +97,181 @@
     return cues;
   }
 
+  /* Item 15 (v1.5.3, T13 rework — PENYIMPANGAN dari §7.4 harfiah,
+     lihat laporan rework frontend-v153-rework.md): `line:-2` TERNYATA
+     tidak memberi gap ~1 baris untuk cue 2 baris. Chrome menafsirkan
+     setting `line` snap-to-lines sebagai posisi ATAS blok cue: cue
+     2 baris di `line:-2` mengisi baris -2 DAN -1 (gap 0, terukur
+     verify-t13: 390 inline + fullscreen HP + desktop, semua 0 px),
+     dan cue 1 baris yang ter-wrap jadi 2 baris visual juga gap 0.
+     Gap = (N - jumlah baris visual) x line-height. Karena itu cue
+     utama memakai `line` DINAMIS menurut jumlah baris TEKS AKHIR
+     (terjemahan, [BR] -> newline — sama dengan jumlah baris sumber,
+     terjemahan mempertahankan [BR]): 1 baris -> `line:-2`, 2 baris ->
+     `line:-3`, dst. — selalu menyisakan ~1 baris kosong di bawah
+     blok cue (nominal 28 px di font 20 px, lh 1,4), di semua ukuran.
+     Batas jujur: baris yang ter-wrap saat render (teks 1 baris sumber
+     yang panjangnya melebihi lebar video — 27% cue 1 baris Tokyo
+     Ghoul > 39 karakter) tetap bisa gap 0 — jumlah baris visual
+     hanya diketahui saat render, bukan dari VTT. */
+  function primaryLineFor(text) {
+    var n = String(text == null ? '' : text).split('\n').length;
+    if (!(n >= 1)) n = 1;
+    return 'line:-' + (n + 1);
+  }
+  /* Item 17 (v1.5.3, T14 rework — skema sadar-jumlah-baris, §7A.3,
+     menggantikan tier tetap T12 10/22/34/46% — keputusan Faygo
+     2026-11-20 ~05:13 WIB "Perbaiki skemanya": tier tetap masih
+     menumpuk teks bila sekunder 2 baris diikuti sekunder lain,
+     bukti tasks/t12-orphan-196.png, jendela yatim Grup 1
+     196,11–197,89 dtk: #46 2 baris di 10% + #47 di 22% menimpa
+     baris ke-2 #46).
+     Rumus (mengikat, dari angka ukur T7/T12/T13): 1 baris cue
+     (font 20 px, lh 1,4) = 28 px = 12,8% tinggi video 390 px;
+     jarak antar blok 2,7% (~6 px). Sekunder pertama line:10%
+     (gap atas terukur 21,9 px ≥16 px). Sekunder ke-(k+1):
+     tier(k+1) = tier(k) + (baris(k) x 12,8%) + 2,7%, dibulatkan
+     1 desimal. Jumlah baris dari TEKS AKHIR terjemahan ([BR] ->
+     newline — sumber yang sama dengan primaryLineFor).
+     Cap tumpukan (mengikat): blok tiap sekunder harus berakhir
+     di atas puncakUtama% - 2,7%, puncakUtama% = 100% -
+     (barisUtama + 1) x 12,8% (utama 2 baris -> 61,6%; 1 baris ->
+     74,4%). tier(k) <= puncakUtama% - 2,7% - (baris(k) x 12,8%);
+     bila tier rumus melampaui cap, dijepit ke cap; bila cap <=
+     tier sekunder sebelumnya, sekunder itu BERBAGI baris dengan
+     sekunder sebelumnya (teksnya bisa bertumpuk — batas jujur,
+     bukan temuan; konfigurasi ini belum pernah teramati di data
+     uji — grup terbesar 5 cue dalam rantai, maks 2 aktif
+     bersamaan). Contoh hitung: yatim Grup 1 — #46 2 baris di 10%
+     (blok 10–35,6%) -> #47 di 38,3% (jarak antar blok 5,9 px);
+     Grup 7/8 (sekunder 1 baris): 10 / 25,5 / 41,0 / 56,5% tanpa
+     jepit; utama 2 baris + rantai sekunder 1 baris -> tier ke-4
+     dijepit 56,5% -> 46,1%, sekunder ke-5 berbagi 46,1%.
+     Sekunder pertama juga dijepit ke cap bila cap < 10%
+     (cabang tak pernah teramati — utama >=4 baris) dengan
+     lantai 0%. Batas jujur: (a) baris yang ter-wrap saat render
+     tetap bisa bertumpuk (jumlah baris visual hanya diketahui
+     saat render); (b) rumus dikalibrasi di font 20 px — di font
+     32 px 1 baris = 20,4% tinggi video, langkah bisa meremehkan
+     tinggi blok; perubahan font TIDAK memicu rebuildTrack(),
+     jadi line yang sudah ditulis tidak mengikuti font.
+     Aturan yatim (§7A.3): bila utama habis duluan, sekunder yang
+     tersisa TETAP di atas pada barisnya masing-masing — tidak
+     dipromosikan (terpenuhi oleh konstruksi: line ditetapkan per
+     grup saat buildVtt, bukan per himpunan aktif). */
+  var CUE_LINE_SECONDARY_FIRST = 10; /* % — sekunder pertama */
+  var CUE_LINE_PER_ROW = 12.8; /* % tinggi video per baris cue (font 20 px, lh 1,4) */
+  var CUE_LINE_GAP = 2.7; /* % jarak antar blok sekunder */
+  function countLines(text) {
+    var n = String(text == null ? '' : text).split('\n').length;
+    return n >= 1 ? n : 1;
+  }
+  function round1(x) { return Math.round(x * 10) / 10; }
+  /* Tier sekunder ke-(k+1) dari tier + jumlah baris sekunder ke-k.
+     prevTier = tier sekunder sebelumnya (angka %), prevLines =
+     jumlah barisnya, thisLines = jumlah baris sekunder ini,
+     puncakUtama = puncak blok cue utama (%, §7A.3). Mengembalikan
+     tier (angka %, 1 desimal). */
+  function secondaryLineFor(prevTier, prevLines, thisLines, puncakUtama) {
+    var tier = round1(prevTier + prevLines * CUE_LINE_PER_ROW + CUE_LINE_GAP);
+    var cap = round1(puncakUtama - CUE_LINE_GAP - thisLines * CUE_LINE_PER_ROW);
+    if (tier > cap) tier = cap;
+    if (tier <= prevTier) tier = prevTier; /* berbagi baris — batas jujur §7A.3 */
+    return tier;
+  }
+
+  /* Item 17 — deteksi grup tumpang tindih (§7A.2, mengikat).
+     Dua cue TUMPANG TINDIH bila a.start < b.end && b.start < a.end
+     (yang hanya bersentuhan di batas, a.end == b.start, TIDAK
+     dihitung). Grup = komponen terhubung dari irisan interval.
+     Di dalam tiap grup, urutan (start naik, end TURUN, index naik):
+     anggota pertama = UTAMA (line dinamis primaryLineFor), sisanya
+     SEKUNDER (line sadar-jumlah-baris secondaryLineFor, §7A.3 —
+     tier dihitung dari jumlah baris teks akhir sekunder
+     sebelumnya + cap tumpukan terhadap puncak cue utama).
+     Arah end TURUN mengikuti tie-break eksplisit PRD: start sama →
+     yang berakhir lebih dulu (lebih pendek) jadi SEKUNDER, jadi yang
+     lebih panjang (berakhir belakangan) jadi UTAMA; masih sama →
+     index lebih besar jadi sekunder. */
+  function cueLineMap(cues, textOf) {
+    var map = new Map();
+    var sorted = cues.slice().sort(function (a, b) {
+      if (a.start !== b.start) return a.start - b.start;
+      if (a.end !== b.end) return b.end - a.end;
+      return a.index - b.index;
+    });
+    var group = [];
+    var groupEnd = -Infinity;
+    function flush() {
+      var mainText = textOf ? textOf(group[0]) : group[0].text;
+      var mainLines = countLines(mainText);
+      var puncakUtama = 100 - (mainLines + 1) * CUE_LINE_PER_ROW;
+      var prevTier = null;
+      var prevLines = 0;
+      for (var i = 0; i < group.length; i++) {
+        var text = textOf ? textOf(group[i]) : group[i].text;
+        if (i === 0) {
+          map.set(group[i].index, primaryLineFor(text));
+        } else {
+          var thisLines = countLines(text);
+          var tier;
+          if (prevTier === null) {
+            /* Sekunder pertama: 10%, dijepit ke cap bila cap < 10%
+               (cabang tak pernah teramati — utama >=4 baris). */
+            var cap1 = round1(puncakUtama - CUE_LINE_GAP - thisLines * CUE_LINE_PER_ROW);
+            tier = Math.min(CUE_LINE_SECONDARY_FIRST, cap1);
+            if (tier < 0) tier = 0;
+          } else {
+            tier = secondaryLineFor(prevTier, prevLines, thisLines, puncakUtama);
+          }
+          map.set(group[i].index, 'line:' + tier + '%');
+          prevTier = tier;
+          prevLines = thisLines;
+        }
+      }
+      group = [];
+      groupEnd = -Infinity;
+    }
+    for (var j = 0; j < sorted.length; j++) {
+      var c = sorted[j];
+      if (group.length && c.start >= groupEnd) flush();
+      group.push(c);
+      if (c.end > groupEnd) groupEnd = c.end;
+    }
+    flush();
+    return map;
+  }
+
+  /* Item 24 lapis B (v1.5.4, fix round F-01 + L-18): ratakan teks cue
+     supaya satu cue TIDAK PERNAH pecah jadi dua di render, apa pun
+     isi DB-nya. Parser WebVTT Chrome memisah blok pada (a) baris
+     kosong — termasuk baris yang hanya berisi spasi/tab/NBSP — dan
+     (b) baris pola timestamp di tengah blok, termasuk yang
+     terindentasi spasi/tab. Karena itu: baris kosong-isi-whitespace
+     diratakan jadi spasi; \n sebelum baris pola timestamp (boleh
+     terindentasi) digabung jadi spasi; baris timestamp di AWAL teks
+     diberi penanda supaya tidak lagi diawali timestamp. Satu \n
+     tunggal di antara dua baris berisi teks DIPERTAHANKAN (cue
+     2 baris sah tetap 2 baris); baris berisi teks tidak pernah
+     whitespace-only, jadi perilaku cue sah tidak berubah. \r\n / \r
+     dinormalkan dulu ke \n. Teks racun tetap mengandung --> sehingga
+     Chrome mengosongkan cue itu (tidak ada teks palsu yang tampil). */
+  function flattenCueText(text) {
+    var s = String(text).replace(/\r\n?/g, '\n');
+    s = s.replace(/^(?:[ \t\u00A0]*\n)+/, '');
+    s = s.replace(/\n(?:[ \t\u00A0]*\n)+/g, ' ');
+    s = s.replace(/\n(?=[ \t\u00A0]*\d{1,2}:\d{2}(?::\d{2})?\.\d{1,3}\s*-->)/g, ' ');
+    s = s.replace(/^([ \t\u00A0]*)(\d{1,2}:\d{2}(?::\d{2})?\.\d{1,3}\s*-->)/, '$1\u00B7$2');
+    return s;
+  }
+
   function buildVtt(cues, translated) {
     var out = ['WEBVTT', ''];
+    var lines = cueLineMap(cues, function (c) { return flattenCueText(translated.has(c.index) ? translated.get(c.index) : c.text); });
     for (var i = 0; i < cues.length; i++) {
       var c = cues[i];
-      var text = translated.has(c.index) ? translated.get(c.index) : c.text;
-      out.push(formatTimestamp(c.start) + ' --> ' + formatTimestamp(c.end));
+      var text = flattenCueText(translated.has(c.index) ? translated.get(c.index) : c.text);
+      out.push(formatTimestamp(c.start) + ' --> ' + formatTimestamp(c.end) + ' ' + (lines.get(c.index) || primaryLineFor(text)));
       out.push(text);
       out.push('');
     }

@@ -46,6 +46,16 @@ function esc(value) {
     .replace(/'/g, '&#39;');
 }
 
+/* Judul tampil (v1.5.2 item 5): bahasa Jepang (romaji) dari kolom
+   `alternative`; fallback ke `title` bila kosong. Tanpa translate —
+   data sudah ada di payload (alternative terisi 98% judul). */
+function displayTitle(item) {
+  if (!item) return '';
+  var alt = item.alternative != null ? String(item.alternative).trim() : '';
+  if (alt) return alt;
+  return item.title != null ? String(item.title) : '';
+}
+
 /* Ikon SVG inline (stroke 2, ukuran 16 default). */
 var ICONS = {
   search: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>',
@@ -143,7 +153,7 @@ function metaLine(item) {
 
 function posterImg(item, cls) {
   var src = (item && item.poster) ? esc(item.poster) : PLACEHOLDER_IMG;
-  return '<img src="' + src + '" alt="' + esc(item && item.title ? item.title : 'Poster anime') + '"' +
+  return '<img src="' + src + '" alt="' + esc(displayTitle(item) || 'Poster anime') + '"' +
     (cls ? ' class="' + cls + '"' : '') + ' loading="lazy"' +
     ' onerror="this.onerror=null;this.src=\'' + PLACEHOLDER_IMG + '\'">';
 }
@@ -159,7 +169,7 @@ function cardHTML(item, opts) {
   var score = scoreNum(item);
   var extra = '';
   if (opts.rank) extra += '<span class="anime-card__rank">#' + opts.rank + '</span>';
-  if (opts.remove) extra += '<button class="anime-card__remove" data-remove-fav="' + esc(item.id) + '" aria-label="Hapus ' + esc(item.title) + ' dari favorit" title="Hapus dari favorit">×</button>';
+  if (opts.remove) extra += '<button class="anime-card__remove" data-remove-fav="' + esc(item.id) + '" aria-label="Hapus ' + esc(displayTitle(item)) + ' dari favorit" title="Hapus dari favorit">×</button>';
   var cls = 'anime-card' + (opts.continueItem ? ' continue-card' : '');
   var poster = opts.continueItem
     ? '<div class="continue-thumb">' + bgImg(item) + '<div class="progress"><div class="progress__bar" style="width:' + Math.min(100, Math.max(0, opts.continueItem.percent || 0)) + '%"></div></div></div>'
@@ -168,7 +178,7 @@ function cardHTML(item, opts) {
       (score != null ? '<span class="anime-card__score">' + icon('star') + ' ' + score.toFixed(2) + '</span>' : '') +
       extra + '</div>';
   var html = '<a class="' + cls + '" href="/detail.html?id=' + encodeURIComponent(item.id) + '">' + poster +
-    '<h3 class="anime-card__title">' + esc(item.title) + '</h3>' +
+    '<h3 class="anime-card__title">' + esc(displayTitle(item)) + '</h3>' +
     '<p class="anime-card__meta">' + esc(metaLine(item)) + '</p>';
   if (opts.continueItem) {
     html += '<p class="anime-card__continue">Ep ' + esc(opts.continueItem.episode) + ' · ' + esc(opts.continueItem.percent || 0) + '% ditonton · ' + esc(timeAgo(opts.continueItem.updated_at)) + '</p>';
@@ -370,6 +380,9 @@ function chromeHTML(active, user) {
    ditangkap SEBELUM yang baru disisipkan supaya tidak ada ID
    ganda yang tertinggal. */
 function applyChrome(c) {
+  /* v1.5.2 item 7: chrome digambar ulang = drawer tertutup; pastikan
+     kunci scroll body tidak tertinggal dalam keadaan terkunci. */
+  document.body.style.overflow = '';
   var headerSlot = document.getElementById('site-header-slot');
   if (headerSlot) {
     headerSlot.outerHTML = c.header;
@@ -477,6 +490,9 @@ function initChromeInteractions() {
     drawer.hidden = false;
     if (backdrop) backdrop.hidden = false;
     if (btnOpen) btnOpen.setAttribute('aria-expanded', 'true');
+    /* v1.5.2 item 7: kunci scroll body selama drawer terbuka supaya
+       scroll di dalam drawer tidak bocor ke halaman belakang. */
+    document.body.style.overflow = 'hidden';
   }
   function closeDrawer() {
     if (!drawer) return;
@@ -484,6 +500,9 @@ function initChromeInteractions() {
     drawer.hidden = true;
     if (backdrop) backdrop.hidden = true;
     if (btnOpen) btnOpen.setAttribute('aria-expanded', 'false');
+    /* v1.5.2 item 7: kembalikan scroll body di SEMUA jalur tutup
+       (tombol ×, backdrop, tautan drawer). */
+    document.body.style.overflow = '';
   }
   if (btnOpen) btnOpen.addEventListener('click', openDrawer);
   if (btnClose) btnClose.addEventListener('click', closeDrawer);
@@ -589,3 +608,88 @@ function initPasswordToggles(scope) {
   (scope || document).querySelectorAll('.pw-toggle').forEach(bindPasswordToggle);
 }
 document.addEventListener('DOMContentLoaded', function () { initPasswordToggles(document); });
+
+/* ---------- PWA (v1.5.4): registrasi service worker + banner "Install aplikasi" ----------
+   Registrasi SW sesudah load (tanpa menghambat first paint); gagal
+   daftar → situs tetap jalan normal, tanpa PWA, tanpa error.
+   Banner hanya di beranda, hanya bila beforeinstallprompt pernah
+   ditangkap + belum ter-install + belum pernah ditutup di perangkat
+   ini (localStorage mitsu_pwa_banner_dismissed, pola lsRead/lsWrite). */
+var _pwaDeferredPrompt = null;
+var _pwaBannerEl = null;
+
+function pwaIsStandalone() {
+  try {
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+  } catch (e) {}
+  return !!window.navigator.standalone;
+}
+function pwaBannerDismissed() {
+  try {
+    if (typeof lsRead === 'function') return !!lsRead('mitsu_pwa_banner_dismissed', false);
+    return window.localStorage.getItem('mitsu_pwa_banner_dismissed') === '1';
+  } catch (e) { return false; }
+}
+function pwaMarkDismissed() {
+  try {
+    if (typeof lsWrite === 'function') lsWrite('mitsu_pwa_banner_dismissed', true);
+    else window.localStorage.setItem('mitsu_pwa_banner_dismissed', '1');
+  } catch (e) {}
+}
+function pwaHideBanner() {
+  if (_pwaBannerEl) { _pwaBannerEl.remove(); _pwaBannerEl = null; }
+}
+function pwaShowBanner() {
+  if (_pwaBannerEl || !document.body) return;
+  /* Hanya beranda; tidak di halaman tonton (tidak boleh menutupi player). */
+  var p = window.location.pathname;
+  if (p !== '/' && p !== '/index.html') return;
+  if (pwaIsStandalone() || pwaBannerDismissed() || !_pwaDeferredPrompt) return;
+  var bar = document.createElement('div');
+  bar.className = 'pwa-banner';
+  bar.setAttribute('role', 'region');
+  bar.setAttribute('aria-label', 'Install aplikasi Mitsunime');
+  bar.innerHTML =
+    '<img class="pwa-banner__icon" src="/icons/icon-192.png" alt="" width="40" height="40">' +
+    '<span class="pwa-banner__text">Mitsunime — Install sebagai aplikasi</span>' +
+    '<button type="button" class="pwa-banner__install">Install</button>' +
+    '<button type="button" class="pwa-banner__close" aria-label="Tutup">✕</button>';
+  bar.querySelector('.pwa-banner__install').addEventListener('click', function () {
+    var dp = _pwaDeferredPrompt;
+    pwaMarkDismissed();
+    pwaHideBanner();
+    if (!dp) return;
+    _pwaDeferredPrompt = null;
+    try {
+      var pr = dp.prompt();
+      if (pr && typeof pr.catch === 'function') pr.catch(function () {});
+      if (dp.userChoice && typeof dp.userChoice.then === 'function') {
+        dp.userChoice.then(function () {}).catch(function () {});
+      }
+    } catch (e) {}
+  });
+  bar.querySelector('.pwa-banner__close').addEventListener('click', function () {
+    pwaMarkDismissed();
+    pwaHideBanner();
+  });
+  document.body.appendChild(bar);
+  _pwaBannerEl = bar;
+}
+window.addEventListener('beforeinstallprompt', function (e) {
+  try { e.preventDefault(); } catch (err) {}
+  _pwaDeferredPrompt = e;
+  pwaShowBanner();
+});
+window.addEventListener('appinstalled', function () {
+  _pwaDeferredPrompt = null;
+  pwaMarkDismissed();
+  pwaHideBanner();
+});
+window.addEventListener('load', function () {
+  if ('serviceWorker' in navigator) {
+    try {
+      navigator.serviceWorker.register('/sw.js').catch(function () { /* diam: tanpa PWA */ });
+    } catch (e) { /* diam */ }
+  }
+  pwaShowBanner();
+});

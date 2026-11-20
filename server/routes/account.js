@@ -309,9 +309,10 @@ function verifyRequestAllowed(email) {
 // verify/request penolakan berupa 429 + retry_after (akun di titik
 // ini sudah diketahui belum terverifikasi dari alur pemanggil, dan
 // frontend menampilkan countdown dari retry_after). Untuk
-// password/forgot penolakan WAJIB diam-diam (respons generik tidak
-// boleh berubah — anti-enumerasi), frontend mengandalkan countdown
-// lokalnya.
+// password/forgot (email TERDAFTAR) penolakan WAJIB diam-diam (respons
+// generik tidak boleh berubah), frontend mengandalkan countdown
+// lokalnya. Email BELUM terdaftar sejak v1.5.1 dijawab jujur di
+// handlePasswordForgot dan tidak masuk cooldown sama sekali.
 // v1.4.1: cooldown DIPISAH — kirim ulang kode verifikasi hanya
 // 10 detik (keputusan pengguna 2026-11-17: tombol kirim ulang
 // langsung abu-abu + countdown sebentar sesudah diklik), sedangkan
@@ -393,13 +394,19 @@ async function handleVerifyRequest(req, res) {
 // --- Lupa password (reset lewat kode email) ---
 
 // POST /api/auth/password/forgot { email } → kirim kode reset 6 digit.
-// Respons SELALU generik yang sama — email terdaftar, tidak terdaftar,
-// SMTP nonaktif, kena rate limit, atau gagal kirim: semuanya dijawab
-// 200 dengan pesan yang sama persis, tanpa mengirim apa pun bila
-// akunnya tidak ada. Jangan jadikan endpoint ini oracle enumerasi
-// email. Rate limit per email meniru kirim ulang verifikasi
-// (5/jam, in-memory), tetapi diterapkan DIAM-DIAM: melewati batas
-// tidak mengubah respons, hanya menghentikan pengiriman.
+// v1.5.1 (Bentuk A — KEPUTUSAN PENGGUNA 19 Nov 2026): email yang BELUM
+// TERDAFTAR dijawab JUJUR (200 + code 'email_not_registered' + pesan
+// "Akun belum terdaftar, silakan daftar terlebih dahulu.") — bukan
+// generik. Desain anti-enumerasi lama (respons SELALU generik, jangan
+// jadikan endpoint ini oracle enumerasi email) SENGAJA DIBALIK di sini:
+// pengguna sendiri kebingungan karena pesan generik itu membuatnya
+// mengira kunci aplikasi emailnya terhapus. Konsekuensi yang diterima:
+// siapa pun bisa mengecek email mana yang terdaftar. BUKAN BUG —
+// jangan "memperbaiki" kembali perubahan ini.
+// Email TERDAFTAR tetap generik (200 + pesan yang sama persis),
+// dengan rate limit per email 5/jam + cooldown 60 detik yang
+// diterapkan DIAM-DIAM: melewati batas tidak mengubah respons, hanya
+// menghentikan pengiriman.
 const FORGOT_GENERIC_MESSAGE = 'Tautan reset terkirim — cek email kamu.';
 const forgotAttempts = new Map();
 function forgotAllowed(email) {
@@ -423,6 +430,20 @@ async function handlePasswordForgot(req, res) {
   }
   const db = require('../db/database').get();
   const user = db.prepare('SELECT * FROM users WHERE lower(email) = lower(?)').get(email);
+  if (!user) {
+    // v1.5.1 (Bentuk A — KEPUTUSAN PENGGUNA 19 Nov 2026): email belum
+    // terdaftar dijawab JUJUR, bukan generik. Ini sengaja membalik
+    // desain anti-enumerasi lama — siapa pun bisa mengecek email mana
+    // yang terdaftar. BUKAN BUG; jangan "memperbaiki" kembali perubahan
+    // ini. Cabang ini tidak mengirim email, tidak membakar kuota 5/jam,
+    // dan tidak masuk cooldown — pengguna harus bisa langsung mencoba
+    // email lain.
+    return send(res, 200, {
+      ok: true,
+      code: 'email_not_registered',
+      message: 'Akun belum terdaftar, silakan daftar terlebih dahulu.',
+    });
+  }
   if (user && emailVerification.isVerificationEnabled()
     && cooldownLeftSeconds(forgotLastSentAt, email, FORGOT_RESEND_COOLDOWN_MS) === 0
     && forgotAllowed(email)) {

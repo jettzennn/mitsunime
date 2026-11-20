@@ -116,21 +116,34 @@ async function runSearch(page) {
   searchState.status = f.status;
   searchState.year = f.year;
   searchState.page = Math.max(1, page || 1);
+  /* v1.5.2 item 3: saat kolom pencarian berisi teks, chip genre +
+     label "Genre:" disembunyikan — halaman khusus menampilkan hasil.
+     Chip kembali saat kolom dikosongkan. Filter status/tahun tetap
+     terlihat dan tetap berfungsi. (Chip genre yang dipilih lewat
+     klik tanpa mengetik tetap tampil, karena q kosong.) */
+  var genreChipsEl = document.getElementById('genre-chips');
+  var genreLabelEl = document.getElementById('genre-label');
+  var hideGenre = !!f.q;
+  if (genreChipsEl) genreChipsEl.hidden = hideGenre;
+  if (genreLabelEl) genreLabelEl.hidden = hideGenre;
   var hasQuery = !!(f.q || f.genre || f.status || f.year);
   searchState.hasQuery = hasQuery;
   var resultsEl = document.getElementById('search-results');
   var countEl = document.getElementById('result-count');
   var pagEl = document.getElementById('pagination');
   var exploreEl = document.getElementById('sec-explore');
+  var azEl = document.getElementById('sec-az');
   var myRun = ++_searchRun;
   if (!hasQuery) {
     resultsEl.innerHTML = '';
     countEl.textContent = '';
     pagEl.hidden = true;
     exploreEl.hidden = false;
+    azEl.hidden = false;
     return;
   }
   exploreEl.hidden = true;
+  azEl.hidden = true;
   resultsEl.innerHTML = skeletonGridHTML(10);
   countEl.textContent = 'Mencari…';
   try {

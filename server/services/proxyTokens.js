@@ -11,7 +11,7 @@
 const crypto = require('node:crypto');
 
 const TOKEN_TTL_MS = 3 * 60 * 60 * 1000;
-const MAX_ENTRIES = 1000;
+const MAX_ENTRIES = 10000;
 const TOKEN_RE = /^[0-9a-f]{32}$/;
 
 // token -> { url, kind: 'master'|'variant'|'segment'|'vtt', expiresAt }

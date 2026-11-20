@@ -118,6 +118,13 @@ module.exports = {
   // kunci konten — episode baru 7 hari dan judul premium_only dari PRD
   // TIDAK dipakai. Disimpan sebagai knob bila model kunci dihidupkan lagi.
   PREMIUM_NEW_DAYS: num('PREMIUM_NEW_DAYS', 7),
+  // --- Sync katalog otomatis (v1.5.1, PRD §10) ---
+  // Server menjalankan sync ringan sendiri tiap interval supaya banner
+  // "Data mungkin tidak terbaru" tidak muncul. AUTO_SYNC=false mematikan
+  // sync startup + interval sekaligus (lalu pasang cron Termux dari
+  // README sebagai gantinya).
+  AUTO_SYNC: (process.env.AUTO_SYNC || 'true').toLowerCase() !== 'false',
+  AUTO_SYNC_INTERVAL_MINUTES: num('AUTO_SYNC_INTERVAL_MINUTES', 60),
   // Seed/sync: jumlah halaman per jalan dan ukuran halaman API.
   SEED_PAGES: num('SEED_PAGES', 50),
   SEED_PER_PAGE: 100,

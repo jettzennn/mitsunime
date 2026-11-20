@@ -121,6 +121,58 @@ function upcoming(limit = 20) {
   return rowsToAnime(rows);
 }
 
+// Item 11 (v1.5.2, PRD addendum §26): urutan hasil pencarian — TV dulu,
+// lalu tanggal rilis menaik. Satu fragmen ORDER BY bersama untuk jalur FTS
+// dan fallback LIKE (satu sumber, dua pemakaian — dilarang menduplikasi
+// string SQL). Tanpa kolom baru / migrasi: tipe dari
+// payload.terms_by_type.type[0], tanggal mulai dari payload.aired
+// ("Mon D, YYYY", bagian sebelum " to "), fallback kolom year.
+// Fragmen ini konstanta kode — tidak ada potongan SQL dari input pengguna.
+
+// Bagian awal aired (sebelum " to "), atau seluruh nilai bila tanpa rentang.
+const AIRED_START =
+  `CASE WHEN instr(json_extract(a.payload, '$.aired'), ' to ') > 0 ` +
+  `THEN substr(json_extract(a.payload, '$.aired'), 1, instr(json_extract(a.payload, '$.aired'), ' to ') - 1) ` +
+  `ELSE json_extract(a.payload, '$.aired') END`;
+
+// Kunci tanggal "YYYY-MM-DD": parse "Mon D, YYYY" (hari boleh bernol/tidak);
+// bila tidak terparse ("?", "Not available", kosong, format lain) fallback
+// ke kolom year ("YYYY-00-00", urut di awal tahunnya); bila year juga
+// kosong, "9999-99-99" (paling akhir di kelompok tipenya).
+const SEARCH_DATE_KEY =
+  `CASE WHEN length(${AIRED_START}) IN (11, 12) ` +
+  `AND substr(${AIRED_START}, 4, 1) = ' ' ` +
+  `AND substr(${AIRED_START}, -6, 1) = ',' ` +
+  `AND substr(${AIRED_START}, 1, 3) IN ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec') ` +
+  `THEN substr(${AIRED_START}, -4) || '-' || ` +
+  `CASE substr(${AIRED_START}, 1, 3) ` +
+  `WHEN 'Jan' THEN '01' WHEN 'Feb' THEN '02' WHEN 'Mar' THEN '03' WHEN 'Apr' THEN '04' ` +
+  `WHEN 'May' THEN '05' WHEN 'Jun' THEN '06' WHEN 'Jul' THEN '07' WHEN 'Aug' THEN '08' ` +
+  `WHEN 'Sep' THEN '09' WHEN 'Oct' THEN '10' WHEN 'Nov' THEN '11' WHEN 'Dec' THEN '12' END ` +
+  `|| '-' || printf('%02d', CAST(substr(substr(${AIRED_START}, 5), 1, instr(substr(${AIRED_START}, 5), ',') - 1) AS INTEGER)) ` +
+  `WHEN a.year IS NOT NULL THEN printf('%04d-00-00', a.year) ` +
+  `ELSE '9999-99-99' END`;
+
+// Peringkat tipe: TV/TV_SHORT 0, ONA 1, OVA 2, Movie 3, Special/TV Special 4,
+// lainnya/NULL 5.
+const SEARCH_TYPE_RANK =
+  `CASE json_extract(a.payload, '$.terms_by_type.type[0]') ` +
+  `WHEN 'TV' THEN 0 WHEN 'TV_SHORT' THEN 0 ` +
+  `WHEN 'ONA' THEN 1 WHEN 'OVA' THEN 2 WHEN 'Movie' THEN 3 ` +
+  `WHEN 'Special' THEN 4 WHEN 'TV Special' THEN 4 ` +
+  `ELSE 5 END`;
+
+// Tie-break deterministik sesudah peringkat tipe + kunci tanggal (supaya
+// pagination stabil): judul ASC lalu id ASC. Jalur FTS menyisipkan `rank`
+// FTS di depan tie-break ini (§26.3.3) — peringkat tipe + tanggal tetap
+// mendominasi rank, sesuai urutan mengikat §26.3 (tipe → tanggal → rank).
+const SEARCH_TIEBREAK = `a.title COLLATE NOCASE ASC, a.id ASC`;
+
+// Fragmen ORDER BY bersama (peringkat tipe + kunci tanggal + tie-break).
+// Dipakai utuh di jalur LIKE; jalur FTS menyusun ulang dari konstanta
+// yang sama dengan `rank` di antara kunci tanggal dan tie-break.
+const SEARCH_ORDER = `${SEARCH_TYPE_RANK}, ${SEARCH_DATE_KEY}, ${SEARCH_TIEBREAK}`;
+
 // Pencarian judul: FTS5 atas title + alternative + titles, plus filter
 // genre/status/tahun bila diberikan. Query dibersihkan dari karakter
 // sintaks FTS; bila FTS gagal/kosong, fallback ke LIKE agar pencarian
@@ -169,7 +221,7 @@ function search(query, opts = {}) {
     try {
       rows = db.prepare(
         `SELECT a.payload, a.sub_indo, a.premium_only FROM anime_cache a JOIN anime_fts f ON f.rowid = a.id
-         WHERE anime_fts MATCH ?${extraWhere} ORDER BY rank LIMIT ? OFFSET ?`)
+         WHERE anime_fts MATCH ?${extraWhere} ORDER BY ${SEARCH_TYPE_RANK}, ${SEARCH_DATE_KEY}, rank, ${SEARCH_TIEBREAK} LIMIT ? OFFSET ?`)
         .all(match, ...condParams, perPage, offset);
       total = db.prepare(
         `SELECT COUNT(*) AS c FROM anime_cache a JOIN anime_fts f ON f.rowid = a.id
@@ -182,7 +234,7 @@ function search(query, opts = {}) {
     rows = db.prepare(
       `SELECT a.payload, a.sub_indo, a.premium_only FROM anime_cache a
        WHERE (a.title LIKE ? COLLATE NOCASE OR a.alternative LIKE ? COLLATE NOCASE)${extraWhere}
-       ORDER BY a.title COLLATE NOCASE ASC LIMIT ? OFFSET ?`).all(like, like, ...condParams, perPage, offset);
+       ORDER BY ${SEARCH_ORDER} LIMIT ? OFFSET ?`).all(like, like, ...condParams, perPage, offset);
     total = db.prepare(
       `SELECT COUNT(*) AS c FROM anime_cache a
        WHERE (a.title LIKE ? COLLATE NOCASE OR a.alternative LIKE ? COLLATE NOCASE)${extraWhere}`)

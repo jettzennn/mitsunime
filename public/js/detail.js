@@ -37,7 +37,7 @@ async function initDetail(id) {
     detail.anime = res.anime;
     detail.episodes = (res.episodes || []).slice().sort(function (a, b) { return (a.number || 0) - (b.number || 0); });
     if (res.stale) showBanner('warning', staleBannerText(res.anikotoDown));
-    document.title = decodeEntities(res.anime.title || 'Detail Anime') + ' — Mitsunime';
+    document.title = decodeEntities(displayTitle(res.anime) || 'Detail Anime') + ' — Mitsunime';
     renderDetail();
     renderEpisodeList();
     loadRelated(res.anime);
@@ -66,7 +66,7 @@ function renderDetail() {
       '<div class="detail-body">' +
         '<div class="detail-poster">' + posterImg(a) + '</div>' +
         '<div class="detail-info">' +
-          '<h1 class="page-title">' + esc(a.title) + '</h1>' +
+          '<h1 class="page-title">' + esc(displayTitle(a)) + '</h1>' +
           '<div class="detail-meta">' +
             (a.year ? '<span>' + esc(a.year) + '</span>' : '') +
             (animeType(a) ? '<span>' + esc(animeType(a)) + '</span>' : '') +

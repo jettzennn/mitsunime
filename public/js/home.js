@@ -127,7 +127,7 @@ function buildHero(items) {
       '<div class="hero__bg">' + bgImg(item) + '</div>' +
       '<div class="hero__content">' +
         '<span class="hero__rank">#' + (i + 1) + ' Rating Tertinggi</span>' +
-        '<h2 class="hero__title display-title">' + esc(item.title) + '</h2>' +
+        '<h2 class="hero__title display-title">' + esc(displayTitle(item)) + '</h2>' +
         (item.description ? '<p class="hero__synopsis">' + esc(item.description) + '</p>' : '') +
         '<div class="hero__meta">' +
           (score != null ? '<span class="hero__score">' + icon('star') + ' ' + score.toFixed(2) + '</span>' : '') +
@@ -142,9 +142,9 @@ function buildHero(items) {
     '</article>';
   }).join('');
   thumbsEl.innerHTML = items.map(function (item, i) {
-    return '<button class="hero__thumb' + (i === 0 ? ' is-active' : '') + '" type="button" data-thumb="' + i + '" aria-label="Slide ' + (i + 1) + ': ' + esc(item.title) + '">' +
+    return '<button class="hero__thumb' + (i === 0 ? ' is-active' : '') + '" type="button" data-thumb="' + i + '" aria-label="Slide ' + (i + 1) + ': ' + esc(displayTitle(item)) + '">' +
       '<img src="' + esc(item.background_image || item.poster || PLACEHOLDER_IMG) + '" alt="" loading="lazy" onerror="this.onerror=null;this.src=\'' + PLACEHOLDER_IMG + '\'">' +
-      '<span>' + esc(item.title) + '</span></button>';
+      '<span>' + esc(displayTitle(item)) + '</span></button>';
   }).join('');
   dotsEl.innerHTML = items.map(function (_, i) {
     return '<button class="hero__dot' + (i === 0 ? ' is-active' : '') + '" type="button" data-dot="' + i + '" role="tab" aria-label="Slide ' + (i + 1) + '"></button>';
@@ -191,6 +191,17 @@ function updateHeroUI() {
   if (page) page.textContent = String(hero.idx + 1).padStart(2, '0');
   var prog = document.getElementById('hero-progress');
   if (prog) prog.style.width = Math.round(((hero.idx + 1) / hero.items.length) * 100) + '%';
+  /* v1.5.2 item 8: di strip mobile, geser strip supaya thumb aktif
+     selalu kelihatan. Hanya menggeser kontainer strip (scrollLeft)
+     — tidak pernah menggerakkan scroll halaman. */
+  var thumbsEl = document.getElementById('hero-thumbs');
+  var activeThumb = thumbsEl && thumbsEl.querySelector('.hero__thumb.is-active');
+  if (thumbsEl && activeThumb) {
+    var tr = thumbsEl.getBoundingClientRect();
+    var ar = activeThumb.getBoundingClientRect();
+    if (ar.left < tr.left) thumbsEl.scrollLeft += ar.left - tr.left - 8;
+    else if (ar.right > tr.right) thumbsEl.scrollLeft += ar.right - tr.right + 8;
+  }
 }
 
 function stopHeroTimer() {

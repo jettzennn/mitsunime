@@ -1,9 +1,12 @@
 /* ============================================================
-   watch.js — Halaman tonton Mitsunime (v1.5.0: Server HD + Sub Indo)
+   watch.js — Halaman tonton Mitsunime (v1.5.1: Server HD MegaPlay + Sub Indo)
    - Server HD (default): player <video> + hls.js (file vendor, lazy)
-     memutar HLS VidCloud lewat proxy origin sendiri; subtitle
+     memutar HLS MegaPlay lewat proxy origin sendiri; subtitle
      Indonesia (AI) diterjemahkan progresif di browser (subs.js) dan
-     di-cache di server.
+     di-cache di server. v1.5.1 (T5): player DIPATOK mulai dari
+     varian bitrate TERENDAH (hls.js mengurutkan level MENAIK menurut
+     bitrate — startLevel: 0 = terendah, terverifikasi via probe;
+     master MegaPlay sendiri mengurutkan tertinggi dulu).
    - Pemilih server banyak (satu <select> + tombol "Ganti Server"):
      Server HD, MegaPlay, VidCloud, AniEmbed, TryEmbed, Nontongo.
      Daftar server HANYA dari endpoint stream (servers.js) — frontend
@@ -52,7 +55,8 @@ var watch = {
   playerTimer: null, playerHardTimer: null, hasPlayed: false, playerAlive: false,
   playedServerIdx: -1, /* server tempat bukti putar pertama tercatat */
   failedServers: [], overlayKind: null, /* 'loading' | 'error' | null */
-  progress: {}, expReported: {}, /* episode yang sudah dilaporkan selesai (anti-duplikat) */
+  progress: {}, progressPromise: null, /* janji loadProgress() — ditunggu loadEpisode supaya resume tidak membaca progres kosong (fix F-02) */
+  expReported: {}, /* episode yang sudah dilaporkan selesai (anti-duplikat) */
   loggedIn: false, /* v1.4.5: diisi initWatch — tamu tidak mengirim progres/complete ke server */
   /* v1.5.0: Server HD + pemilih multi-server */
   hd: null, subs: null, subMode: 'id', subStatus: null, subHasEn: false,
@@ -85,8 +89,11 @@ async function initWatch(id, epNum, lang) {
     if (res.stale) showBanner('warning', staleBannerText(res.anikotoDown));
     renderWatchHead();
     renderEpisodeList();
-    loadProgress();
+    /* v1.5.4 fix F-02: progres HARUS selesai dimuat sebelum episode
+       dimuat — posisi tersimpan dipakai sebagai resume saat muat awal. */
+    watch.progressPromise = loadProgress();
     loadRelated(watch.anime);
+    await watch.progressPromise;
     loadEpisode(watch.epNum, watch.lang);
   } catch (err) {
     if (err && err.status === 401) {
@@ -106,9 +113,9 @@ function findEpisode(num) {
 function renderWatchHead() {
   var a = watch.anime;
   var score = scoreNum(a);
-  document.title = decodeEntities(a.title || 'Tonton') + ' — Mitsunime';
+  document.title = decodeEntities(displayTitle(a) || 'Tonton') + ' — Mitsunime';
   var titleEl = document.getElementById('watch-title');
-  if (titleEl) titleEl.textContent = decodeEntities(a.title || 'Tonton');
+  if (titleEl) titleEl.textContent = decodeEntities(displayTitle(a) || 'Tonton');
   var dubTab = document.querySelector('#lang-tabs .tab[data-lang="dub"], #lang-tabs .lang-tab[data-lang="dub"]');
   if (dubTab && (parseInt(a.is_dub, 10) || 0) === 0) dubTab.disabled = true;
 
@@ -157,14 +164,7 @@ function wirePlayerControls() {
 
   var subSel = document.getElementById('sub-select');
   if (subSel) subSel.addEventListener('change', function () {
-    var prev = watch.subMode;
-    watch.subMode = subSel.value;
-    if (watch.subMode === 'off') {
-      if (watch.subs) watch.subs.stop();
-    } else if (prev === 'off' && watch.subs) {
-      watch.subs.resume();
-    }
-    applySubMode();
+    setSubMode(subSel.value);
   });
 
   var qSel = document.getElementById('quality-select');
@@ -221,6 +221,16 @@ function wirePlayerControls() {
       if (!srv || srv.kind !== 'hd') return;
       onWatchComplete();
     });
+    /* Rework item 2 (natif): Chrome mengaktifkan sendiri track
+       Inggris ~1 dtk setelah video JALAN masuk fullscreen
+       (auto-caption) — tanpa ini subtitle ganda di fullscreen
+       (Inggris natif + Indonesia natif). Tegakkan kembali mode
+       yang benar setiap kali ada mode track yang berubah.
+       applySubMode() idempotent — mode yang sudah benar tidak
+       memicu event lagi, jadi tidak ada loop. */
+    video.textTracks.addEventListener('change', function () {
+      applySubMode();
+    });
     video.addEventListener('error', function () {
       var srv = watch.servers[watch.serverIdx];
       if (!srv || srv.kind !== 'hd') return;
@@ -233,9 +243,15 @@ function wirePlayerControls() {
         playHdServer(srv, video.currentTime || 0);
         return;
       }
-      onServerFailed('Server HD gagal memutar video');
+      onServerFailed('Server Mitsunime gagal memutar video');
       tryNextServer(false);
     });
+    /* Item 12 (v1.5.3, T3): watchdog interval v1.5.2 DIHAPUS (§4.2).
+       Penggantinya dua pemicu peristiwa di bawah (dropCueOnce):
+       (a) hideCustomControls() saat bar custom hilang, dan
+       (b) listener 'cuechange' pada track yang showing — keduanya
+       SATU spaced toggle (disabled → ~50 ms → showing) dengan flag
+       penekan applySubMode. Tanpa interval apa pun. */
   }
 
   var iframe = document.getElementById('player-iframe');
@@ -259,6 +275,558 @@ function wirePlayerControls() {
       hidePlayerOverlay();
     }, 3000);
   });
+
+  /* v1.5.3 item 13: kontrol player custom (gagal init → kontrol
+     natif kembali, §5.6). */
+  initCustomControls();
+}
+
+/* ---------- Kontrol player custom (v1.5.3 item 13) ----------
+   Menggantikan kontrol bawaan Chrome HANYA untuk Server HD.
+   Bar + menu adalah satu unit dengan satu timer auto-hide ~3,6 dtk
+   (disamakan dengan timing hide kontrol natif). State tampil/hilang
+   di satu tempat (cc.visible) — dibaca pemicu item 12 (T3).
+   Bila init gagal (exception apa pun), video mendapat kembali
+   atribut controls (kontrol natif) — video tidak pernah tanpa
+   kontrol (§5.6). */
+var CC_HIDE_MS = 3600;
+var CC_DBLTAP_MS = 300;
+var CC_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+var cc = {
+  enabled: false, visible: false, overlayUp: false, menuOpen: false,
+  video: null, player: null, bar: null, menu: null, center: null,
+  hideTimer: null, lastTapAt: 0, lastTapX: 0, lastTapSide: 0,
+  scrubbing: false, suppressApply: false, dropPending: false,
+  dropInFlight: false, dropLastAt: 0, dropCount: 0, applyDeferred: false,
+  inited: false, failed: false,
+};
+
+function ccEl(id) { return document.getElementById(id); }
+
+function fallbackNativeControls() {
+  cc.failed = true;
+  cc.enabled = false;
+  var v = cc.video || ccEl('player-video');
+  if (v) { try { v.setAttribute('controls', ''); } catch (e) {} }
+  ['player-bar', 'player-menu', 'player-center'].forEach(function (id) {
+    var el = ccEl(id);
+    if (el) el.hidden = true;
+  });
+}
+
+function refreshBarDom() {
+  if (!cc.bar || !cc.center || !cc.video) return;
+  cc.bar.hidden = !(cc.enabled && cc.visible && !cc.overlayUp);
+  /* Tombol play tengah tampil saat pause (bukan saat overlay
+     loading/error menutupi player). */
+  cc.center.hidden = !(cc.enabled && !cc.overlayUp && cc.video.paused);
+}
+
+function clearHideTimer() {
+  if (cc.hideTimer) { clearTimeout(cc.hideTimer); cc.hideTimer = null; }
+}
+function armHideTimer() {
+  clearHideTimer();
+  if (!cc.video || cc.video.paused) return; /* pause: bar tetap tampil */
+  cc.hideTimer = setTimeout(function () { cc.hideTimer = null; hideCustomControls(); }, CC_HIDE_MS);
+}
+function resetHideTimer() { if (cc.visible) armHideTimer(); }
+
+function showCustomControls() {
+  if (!cc.enabled || cc.failed || !cc.video) return;
+  cc.visible = true;
+  refreshBarDom();
+  armHideTimer();
+}
+function hideCustomControls() {
+  var wasVisible = cc.visible;
+  cc.visible = false;
+  closePlayerMenu('autohide');
+  clearHideTimer();
+  refreshBarDom();
+  /* T3 (a): bar baru saja hilang → SATU spaced toggle supaya cue
+     aktif langsung turun (hanya bila bar memang sedang tampil;
+     bila sudah hilang, ini bukan peristiwa hide baru). */
+  if (wasVisible) dropCueOnce('hide');
+}
+
+/* ---------- Item 12 (T3): subtitle langsung turun — spaced toggle ----------
+   Chrome TIDAK memosisikan ulang cue aktif saat kontrol hilang; cue
+   tetap terangkat sampai update internal Chrome berikutnya. Satu
+   toggle mode (disabled → ~50 ms → showing) memaksa Chrome me-render
+   ulang cue aktif sesuai keadaan kontrol SAAT ITU. Dua pemicu (§4.2):
+   (a) hideCustomControls() saat bar hilang; (b) 'cuechange' pada track
+   yang showing selagi kontrol hilang (cue baru mulai). Larangan §4.2:
+   tanpa interval, tanpa toggle saat kontrol tampil / pause / tidak
+   ada track showing / lebih dari 1× per peristiwa.
+   - suppressApply: listener 'change' di textTracks memanggil
+     applySubMode() yang akan menghidupkan lagi track dalam ~2 ms
+     (T17 Exp 5) — flag ini menekannya selama jeda 50 ms.
+   - dropInFlight + cooldown 200 ms: mencegah toggle berulang dari
+     cuechange yang dipicu toggle itu sendiri (mode disabled/showing
+     memicu cuechange) dan dari dua cue yang mulai hampir bersamaan
+     (item 17) — satu toggle me-render ulang SEMUA cue aktif (§4.6). */
+function dropCueOnce(reason) {
+  var video = cc.video;
+  if (!video || !cc.enabled || cc.failed) return false;
+  if (video.paused) return false;
+  if (cc.dropInFlight) return false;
+  var now = performance.now();
+  if (now - cc.dropLastAt < 200) return false;
+  var target = null;
+  for (var i = 0; i < video.textTracks.length; i++) {
+    var tt = video.textTracks[i];
+    if (tt.mode === 'showing' && tt.activeCues && tt.activeCues.length > 0) { target = tt; break; }
+  }
+  if (!target) return false;
+  cc.dropInFlight = true;
+  cc.dropLastAt = now;
+  cc.dropCount++;
+  cc.suppressApply = true;
+  try { target.mode = 'disabled'; } catch (e) {}
+  setTimeout(function () {
+    try { target.mode = 'showing'; } catch (e) {}
+    cc.suppressApply = false;
+    cc.dropInFlight = false;
+  }, 50);
+  return true;
+}
+
+/* Pemicu (b): cuechange pada track yang showing. Diikat SATU KALI per
+   objek TextTrack (marker _mitsuCueDrop) — rebuildTrack() membuat
+   elemen <track> baru tiap batch, jadi track baru mendapat ikatan
+   baru lewat applySubMode() yang memanggil bindCueDrop(). */
+function bindCueDrop(track) {
+  if (!track || track._mitsuCueDrop) return;
+  track._mitsuCueDrop = true;
+  track.addEventListener('cuechange', function () {
+    if (cc.visible) return; /* kontrol tampil: cue memang terangkat */
+    if (!cc.enabled || cc.failed) return;
+    var video = cc.video;
+    if (!video || video.paused) return;
+    dropCueOnce('cuechange');
+  });
+}
+function setCustomBarEnabled(on) {
+  cc.enabled = !!on && !cc.failed;
+  if (!cc.enabled) {
+    cc.visible = false;
+    closePlayerMenu('server');
+    clearHideTimer();
+  }
+  refreshBarDom();
+}
+
+function openPlayerMenu() {
+  if (!cc.enabled || cc.failed || !cc.menu) return;
+  cc.menuOpen = true;
+  cc.menu.hidden = false;
+  var btn = ccEl('player-menu-btn');
+  if (btn) btn.setAttribute('aria-expanded', 'true');
+  resetHideTimer();
+}
+function closePlayerMenu(reason) {
+  if (!cc.menuOpen) return;
+  cc.menuOpen = false;
+  if (cc.menu) cc.menu.hidden = true;
+  var btn = ccEl('player-menu-btn');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+function togglePlayerMenu() {
+  if (cc.menuOpen) closePlayerMenu('toggle');
+  else openPlayerMenu();
+}
+/* Dipakai subprefs.js (menu Subtitle): slider dilepas / Atur Ulang
+   menutup menu sesudah pilihan di-commit (§5.8.2 (c)). */
+window.closePlayerMenu = closePlayerMenu;
+/* Dipakai subprefs.js (T2): interaksi di dalam menu (drag slider,
+   memilih warna) me-reset timer auto-hide — §5.8 (d) alasan 3. */
+window.resetCustomHideTimer = resetHideTimer;
+
+function togglePlay() {
+  var v = cc.video;
+  if (!v) return;
+  if (v.paused) {
+    v.play().catch(function () {});
+    /* Item 25 (a): aksi play pengguna saat pause → auto-rotate. */
+    autoRotateOnPlay();
+  }
+  else v.pause();
+}
+function syncPlayUI() {
+  var v = cc.video;
+  if (!v) return;
+  var playing = !v.paused;
+  var btn = ccEl('player-play');
+  if (btn) {
+    btn.classList.toggle('is-playing', playing);
+    btn.setAttribute('aria-label', playing ? 'Jeda' : 'Putar');
+  }
+  refreshBarDom();
+}
+function fmtTime(s) {
+  if (s == null || !isFinite(s)) return '--:--';
+  s = Math.max(0, Math.floor(s));
+  var m = Math.floor(s / 60), ss = s % 60;
+  return m + ':' + (ss < 10 ? '0' : '') + ss;
+}
+function syncTimeUI() {
+  var v = cc.video;
+  if (!v) return;
+  var timeEl = ccEl('player-time');
+  if (timeEl) timeEl.textContent = fmtTime(v.currentTime) + ' / ' + fmtTime(v.duration);
+  var seek = ccEl('player-seek');
+  if (seek && !cc.scrubbing) {
+    var dur = v.duration || 0;
+    if (dur > 0) seek.max = String(dur);
+    seek.value = String(v.currentTime || 0);
+  }
+}
+function syncVolumeUI() {
+  var v = cc.video;
+  if (!v) return;
+  var btn = ccEl('player-mute');
+  if (btn) {
+    btn.classList.toggle('is-muted', v.muted || v.volume === 0);
+    btn.setAttribute('aria-label', v.muted ? 'Nyalakan suara' : 'Bisu');
+  }
+  var vol = ccEl('player-vol');
+  if (vol) vol.value = String(Math.round((v.muted ? 0 : v.volume) * 100));
+}
+function toggleMute() {
+  var v = cc.video;
+  if (!v) return;
+  v.muted = !v.muted;
+  syncVolumeUI();
+}
+function seekBy(d) {
+  var v = cc.video;
+  if (!v) return;
+  var dur = v.duration || 0;
+  try { v.currentTime = Math.max(0, Math.min(dur, (v.currentTime || 0) + d)); } catch (e) {}
+}
+function toggleFullscreen() {
+  var p = cc.player;
+  if (!p) return;
+  if (document.fullscreenElement) { document.exitFullscreen().catch(function () {}); }
+  else if (p.requestFullscreen) { p.requestFullscreen().catch(function () {}); }
+}
+function syncFsUI() {
+  var btn = ccEl('player-fs');
+  if (!btn) return;
+  btn.setAttribute('aria-label', document.fullscreenElement ? 'Keluar dari layar penuh' : 'Layar penuh');
+}
+
+/* ---------- Item 25 (v1.5.4): auto-rotate saat play ----------
+   Niat play terdeteksi (aksi play pengguna saat pause, atau episode
+   baru mulai di playHdServer) → player masuk fullscreen lalu kunci
+   landscape. Keluar fullscreen membuka kunci. Pause TIDAK keluar
+   fullscreen dan TIDAK unlock. Server iframe tidak ikut. Semua
+   kegagalan diam-diam (tanpa toast/error) — video tetap jalan. */
+var _arPending = false; /* permintaan fullscreen auto-rotate sedang berjalan */
+var _arFbTimer = null; /* timer cek efek lock 600 ms (jalur B, Item 28) — hanya satu */
+function orientationLockSupported() {
+  return !!(window.screen && screen.orientation && typeof screen.orientation.lock === 'function');
+}
+/* Item 28 (v1.5.5): apakah orientasi (menurut API) sudah landscape. */
+function isLandscapeOrientation() {
+  try {
+    var t = (window.screen && screen.orientation && screen.orientation.type) || '';
+    return t.indexOf('landscape') === 0;
+  } catch (e) { return false; }
+}
+function cssFallbackActive() {
+  return !!(cc.player && cc.player.classList.contains('ar-css-fallback'));
+}
+/* Item 28: pasang fallback CSS. Cek ulang type TEPAT sebelum memasang
+   (§4.3.3) dan hanya di dalam fullscreen — bila sudah landscape, jangan
+   pasang. Idempoten (kelas yang sudah ada = no-op). */
+function applyCssFallback() {
+  var p = cc.player;
+  if (!p || !document.fullscreenElement) return;
+  if (isLandscapeOrientation()) return;
+  p.classList.add('ar-css-fallback');
+}
+function removeCssFallback() {
+  if (cc.player) cc.player.classList.remove('ar-css-fallback');
+}
+function clearFallbackCheckTimer() {
+  if (_arFbTimer !== null) { clearTimeout(_arFbTimer); _arFbTimer = null; }
+}
+/* Item 28 jalur B: lock resolve → tunggu 600 ms, lalu cek efek. Timer
+   lama dibersihkan bila pemicu datang lagi (satu timer saja). */
+function scheduleFallbackCheck() {
+  clearFallbackCheckTimer();
+  _arFbTimer = setTimeout(function () {
+    _arFbTimer = null;
+    if (!document.fullscreenElement) return;
+    applyCssFallback();
+  }, 600);
+}
+function lockLandscape() {
+  if (!orientationLockSupported()) return;
+  try {
+    var p = screen.orientation.lock('landscape');
+    if (p && typeof p.then === 'function') {
+      /* Jalur B: resolve → cek efek sesudah 600 ms (§4.3.2).
+         Jalur A: reject → fallback langsung, tanpa menunggu. */
+      p.then(function () { scheduleFallbackCheck(); })
+       .catch(function () { applyCssFallback(); });
+    } else {
+      /* lock tanpa promise (browser lama): tidak ada cara tahu hasil —
+         pakai jalur cek efek yang sama. */
+      scheduleFallbackCheck();
+    }
+  } catch (e) { applyCssFallback(); } /* throw sinkron = jalur A */
+}
+function unlockOrientation() {
+  if (!orientationLockSupported()) return;
+  try { screen.orientation.unlock(); } catch (e) { /* diam */ }
+}
+/* Niat play → fullscreen dulu, lock sesudah fullscreen aktif (§5.3.1).
+   Bila sudah fullscreen, langsung kunci. Bila API tidak didukung /
+   fullscreen dimatikan, lewati diam-diam (play tetap jalan). */
+function autoRotateOnPlay() {
+  if (!cc.enabled || cc.failed || !cc.player) return;
+  if (document.fullscreenEnabled === false) return;
+  if (!orientationLockSupported()) return;
+  if (document.fullscreenElement) { lockLandscape(); return; }
+  if (!cc.player.requestFullscreen) return;
+  _arPending = true;
+  try {
+    var p = cc.player.requestFullscreen();
+    if (p && typeof p.then === 'function') {
+      p.then(function () { if (_arPending) { _arPending = false; lockLandscape(); } })
+        .catch(function () { _arPending = false; /* diam */ });
+    }
+  } catch (e) { _arPending = false; /* diam */ }
+}
+
+/* Tap video: tap tunggal = tampil/sembunyi bar (seperti kontrol
+   natif); tap ganda di sepertiga kiri/kanan = ∓10 dtk. Tap pertama
+   double-tap langsung menampilkan bar (tanpa menunda yang terasa);
+   tap kedua yang menentukan seek. */
+function onVideoTap(e) {
+  if (!cc.enabled || cc.failed || !cc.video) return;
+  var v = cc.video;
+  var now = performance.now();
+  var rect = v.getBoundingClientRect();
+  var x, span;
+  if (cssFallbackActive()) {
+    /* Item 28 (§4.3.5): fallback aktif → sumbu bertukar. rotate(90deg)
+       searah jarum jam: kiri penonton = tepi ATAS layar portrait
+       (clientY), kanan penonton = tepi BAWAH layar. rect di sini sudah
+       kotak sesudah transform (lebar = lebar layar, tinggi = tinggi
+       layar); posisi sepanjang video diukur dari clientY terhadap
+       rect.top, rentangnya rect.height — sepertiga ATAS layar = mundur,
+       sepertiga BAWAH layar = maju. */
+    x = (e.clientY || 0) - rect.top;
+    span = rect.height;
+  } else {
+    x = (e.clientX || 0) - rect.left;
+    span = rect.width;
+  }
+  var side = x < span / 3 ? -1 : (x > span * 2 / 3 ? 1 : 0);
+  var dt = now - cc.lastTapAt;
+  if (dt < CC_DBLTAP_MS && side !== 0 && side === cc.lastTapSide) {
+    cc.lastTapAt = 0;
+    seekBy(side * 10);
+    resetHideTimer();
+    return;
+  }
+  cc.lastTapAt = now;
+  cc.lastTapSide = side;
+  if (cc.visible) hideCustomControls(); else showCustomControls();
+}
+
+function onPlayerKeydown(e) {
+  if (!cc.enabled || cc.failed) return;
+  var t = e.target;
+  var tag = t && t.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  var k = e.key;
+  if (k === ' ' || k === 'k' || k === 'K') { e.preventDefault(); togglePlay(); }
+  else if (k === 'f' || k === 'F') { toggleFullscreen(); }
+  else if (k === 'm' || k === 'M') { toggleMute(); }
+  else if (k === 'ArrowLeft') { e.preventDefault(); seekBy(-10); }
+  else if (k === 'ArrowRight') { e.preventDefault(); seekBy(10); }
+  else if (k === 'Escape' && cc.menuOpen) { closePlayerMenu('esc'); }
+  else return;
+  resetHideTimer();
+}
+
+/* Item 16 (a): tap di luar menu menutup menu SAJA. Listener capture
+   di document — tap yang ditelan tidak pernah mencapai video/tombol
+   di bawahnya, jadi tidak ada aksi kontrol yang tidak diminta
+   (tidak play/pause, tidak seek, tidak toggle bar). */
+function onDocumentClickCapture(e) {
+  if (!cc.menuOpen) return;
+  var menu = cc.menu, btn = ccEl('player-menu-btn');
+  if (menu && menu.contains(e.target)) return;
+  if (btn && btn.contains(e.target)) return;
+  e.stopPropagation();
+  e.preventDefault();
+  closePlayerMenu('outside');
+  resetHideTimer();
+}
+
+/* Satu sumber kebenaran ganti bahasa subtitle — dipakai #sub-select
+   DAN baris Bahasa di menu ⋮ (bukan logika ganda, §5.4.6). */
+function setSubMode(mode) {
+  var prev = watch.subMode;
+  watch.subMode = mode;
+  if (mode === 'off') {
+    if (watch.subs) watch.subs.stop();
+  } else if (prev === 'off' && watch.subs) {
+    watch.subs.resume();
+  }
+  applySubMode();
+  var sel = document.getElementById('sub-select');
+  if (sel) sel.value = mode;
+  renderMenuLang();
+}
+
+function renderMenuLang() {
+  var list = ccEl('menu-lang-list');
+  if (!list) return;
+  var tracks = watch.menuTracks || [];
+  var hasEn = !!watch.subHasEn;
+  var translating = watch.subStatus && watch.subStatus.state === 'translating';
+  var rows = [{ value: 'off', label: 'Off' }];
+  tracks.forEach(function (t) {
+    if (!t || !t.lang) return;
+    rows.push({ value: t.lang, label: t.label || t.lang });
+  });
+  if (hasEn) rows.push({ value: 'id', label: translating ? 'Indonesia (AI) — Menerjemahkan…' : 'Indonesia (AI)' });
+  var html = rows.map(function (r) {
+    return '<button type="button" class="player-menu__row' + (watch.subMode === r.value ? ' is-active' : '') + '" data-lang="' + esc(r.value) + '">' +
+      '<span class="player-menu__label">' + esc(r.label) + '</span>' +
+      '<span class="player-menu__check">' + icon('check') + '</span></button>';
+  }).join('');
+  /* Jangan ganti DOM bila isinya sama — supaya baris yang sedang
+     disentuh pengguna tidak hilang saat onSubStatus me-refresh
+     (batch translate selesai) selagi menu terbuka. */
+  if (list._mitsuHtml === html) return;
+  list._mitsuHtml = html;
+  list.innerHTML = html;
+  list.querySelectorAll('.player-menu__row').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      setSubMode(btn.getAttribute('data-lang'));
+      closePlayerMenu('select');
+    });
+  });
+}
+
+function speedLabel(v) {
+  if (v === 1) return '1× (Normal)';
+  return String(v).replace('.', ',') + '×';
+}
+function renderMenuSpeed() {
+  var list = ccEl('menu-speed-list');
+  if (!list || !cc.video) return;
+  var cur = cc.video.playbackRate || 1;
+  var html = CC_SPEEDS.map(function (v) {
+    return '<button type="button" class="player-menu__row' + (cur === v ? ' is-active' : '') + '" data-speed="' + v + '">' +
+      '<span class="player-menu__label">' + esc(speedLabel(v)) + '</span>' +
+      '<span class="player-menu__check">' + icon('check') + '</span></button>';
+  }).join('');
+  if (list._mitsuHtml === html) return;
+  list._mitsuHtml = html;
+  list.innerHTML = html;
+  list.querySelectorAll('.player-menu__row').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var v = parseFloat(btn.getAttribute('data-speed'));
+      if (!isNaN(v) && cc.video) cc.video.playbackRate = v;
+      renderMenuSpeed();
+      closePlayerMenu('select');
+    });
+  });
+}
+function resetPlaybackRate() {
+  if (cc.video) { try { cc.video.playbackRate = 1; } catch (e) {} }
+  renderMenuSpeed();
+}
+
+function initCustomControls() {
+  try {
+    var video = ccEl('player-video');
+    var player = ccEl('player');
+    var bar = ccEl('player-bar');
+    var menu = ccEl('player-menu');
+    var center = ccEl('player-center');
+    if (!video || !player || !bar || !menu || !center) throw new Error('elemen kontrol custom tidak ada');
+    cc.video = video; cc.player = player; cc.bar = bar; cc.menu = menu; cc.center = center;
+    ccEl('player-play').addEventListener('click', function () { togglePlay(); resetHideTimer(); });
+    ccEl('player-center-play').addEventListener('click', function () { togglePlay(); });
+    ccEl('player-mute').addEventListener('click', function () { toggleMute(); resetHideTimer(); });
+    ccEl('player-menu-btn').addEventListener('click', function () { togglePlayerMenu(); });
+    ccEl('player-fs').addEventListener('click', function () { toggleFullscreen(); resetHideTimer(); });
+    if (!document.fullscreenEnabled) { var fsBtn = ccEl('player-fs'); if (fsBtn) fsBtn.hidden = true; }
+    var seek = ccEl('player-seek');
+    seek.addEventListener('input', function () {
+      cc.scrubbing = true;
+      var v = cc.video;
+      if (v) { try { v.currentTime = parseFloat(seek.value) || 0; } catch (e) {} }
+      syncTimeUI();
+      resetHideTimer();
+    });
+    seek.addEventListener('change', function () { cc.scrubbing = false; });
+    var vol = ccEl('player-vol');
+    vol.addEventListener('input', function () {
+      var v = cc.video;
+      if (!v) return;
+      var val = parseInt(vol.value, 10) || 0;
+      v.volume = val / 100;
+      if (val > 0) v.muted = false;
+      syncVolumeUI();
+      resetHideTimer();
+    });
+    video.addEventListener('click', onVideoTap);
+    video.addEventListener('playing', function () { syncPlayUI(); showCustomControls(); });
+    video.addEventListener('pause', function () { syncPlayUI(); showCustomControls(); });
+    video.addEventListener('timeupdate', syncTimeUI);
+    video.addEventListener('loadedmetadata', syncTimeUI);
+    video.addEventListener('durationchange', syncTimeUI);
+    video.addEventListener('volumechange', syncVolumeUI);
+    video.addEventListener('ratechange', renderMenuSpeed);
+    /* Item 25: keluar fullscreen → unlock orientasi; masuk fullscreen
+       sesudah permintaan auto-rotate → kunci landscape. Masuk manual
+       lewat tombol fullscreen TIDAK memicu lock (§5.3.4) — lock hanya
+       bila _arPending (dari autoRotateOnPlay) atau saat play. */
+    document.addEventListener('fullscreenchange', function () {
+      syncFsUI();
+      if (document.fullscreenElement) {
+        if (_arPending) { _arPending = false; lockLandscape(); }
+      } else {
+        _arPending = false;
+        /* Item 28: keluar fullscreen → LEPAS fallback + bersihkan timer
+           pengecekan (§4.3.4). Video tetap jalan (keluar fullscreen
+           bukan pause). */
+        removeCssFallback();
+        clearFallbackCheckTimer();
+        unlockOrientation();
+      }
+    });
+    /* Item 28 (§4.3.3): pengaman rotasi ganda — bila rotasi ASLI
+       belakangan berhasil (type jadi landscape) saat fallback aktif,
+       LEPAS fallback segera (di sini langsung di event, ≤300 ms).
+       Listener dipasang SEKALI di sini; tidak berbuat apa-apa bila
+       fallback tidak aktif. */
+    if (orientationLockSupported()) {
+      window.addEventListener('orientationchange', function () {
+        if (isLandscapeOrientation()) removeCssFallback();
+      });
+    }
+    player.addEventListener('keydown', onPlayerKeydown);
+    document.addEventListener('click', onDocumentClickCapture, true);
+    renderMenuSpeed();
+    syncPlayUI();
+    syncVolumeUI();
+    syncTimeUI();
+    cc.inited = true;
+  } catch (err) {
+    fallbackNativeControls();
+  }
 }
 
 /* Bukti putar HD (playing + currentTime > 0) — menggantikan
@@ -273,6 +841,10 @@ function markPlayerAlive() {
 
 /* ---------- Memuat episode ke player ---------- */
 async function loadEpisode(epNum, lang) {
+  /* v1.5.4 fix F-02: tunggu progres bila masih dimuat (mis. klik
+     episode sangat cepat sesudah halaman dibuka) — janji yang sudah
+     selesai tidak menambah tunggu. */
+  if (watch.progressPromise) { try { await watch.progressPromise; } catch (e) {} }
   cancelAutoNext();
   clearPlayerTimer();
   clearPlayerHardTimer();
@@ -295,7 +867,7 @@ async function loadEpisode(epNum, lang) {
   watch.lang = lang;
 
   var wtEl = document.getElementById('watch-title');
-  if (wtEl) wtEl.textContent = decodeEntities(watch.anime.title || 'Tonton');
+  if (wtEl) wtEl.textContent = decodeEntities(displayTitle(watch.anime) || 'Tonton');
   var weEl = document.getElementById('watch-ep-title');
   if (weEl) weEl.textContent = 'Episode ' + ep.number + (ep.title ? ' — ' + decodeEntities(ep.title) : '');
   document.querySelectorAll('#lang-tabs .lang-tab').forEach(function (tab) {
@@ -347,8 +919,13 @@ async function loadEpisode(epNum, lang) {
     showPlayerError('Video gagal dimuat', 'Episode ini tidak punya tautan video untuk bahasa ' + (lang === 'dub' ? 'DUB' : 'SUB') + '. Coba ganti bahasa.', true);
     return;
   }
-  playServer(0);
-  saveContinue(watch.anime, ep, { lang: lang, percent: 0, time: 0, duration: 0 });
+  playServer(0, resumePositionFor(epNum));
+  /* v1.5.4 fix F-02: save awal HANYA bila episode ini belum punya
+     entri progres — menimpa dengan 0 akan menghapus posisi tersimpan
+     (dan menandai ulang episode yang sudah selesai). */
+  if (!watch.progress || !watch.progress[epNum]) {
+    saveContinue(watch.anime, ep, { lang: lang, percent: 0, time: 0, duration: 0 });
+  }
 }
 
 /* ---------- Pemilih server ---------- */
@@ -395,7 +972,7 @@ function failCurrentServer(reason) {
 }
 
 /* Overlay loading TETAP menutupi player sampai ada bukti player hidup. */
-function playServer(idx) {
+function playServer(idx, resumeTime) {
   clearPlayerTimer();
   clearPlayerHardTimer();
   cancelAutoNext();
@@ -411,6 +988,11 @@ function playServer(idx) {
   var srv = watch.servers[idx];
   syncServerSelect();
   updateServerIndicator(srv.name, 'active');
+  /* v1.5.3 item 13: bar custom hanya untuk Server HD; pindah server
+     menutup menu (§5.8.2 (e)) dan mereset kecepatan ke 1× (§5.4.7). */
+  setCustomBarEnabled(srv.kind === 'hd');
+  closePlayerMenu('server');
+  resetPlaybackRate();
   showPlayerLoading('Memuat video… (Server: ' + srv.name + ')');
   armPlayerTimer();
   watch.playerHardTimer = setTimeout(function () {
@@ -421,7 +1003,7 @@ function playServer(idx) {
     updateServerIndicator(cur ? cur.name : '', 'failed');
     tryNextServer(false);
   }, PLAYER_HARD_TIMEOUT_MS);
-  if (srv.kind === 'hd') playHdServer(srv, 0);
+  if (srv.kind === 'hd') playHdServer(srv, resumeTime);
   else playIframeServer(srv);
 }
 
@@ -463,7 +1045,7 @@ function tryNextServer(manual) {
   var nextName = watch.servers[nextIdx].name;
   updateServerIndicator(nextName, 'retrying');
   playServer(nextIdx);
-  showPlayerLoading('Server ' + prevName + ' gagal, mencoba ' + nextName + '…');
+  showPlayerLoading(prevName + ' gagal, mencoba ' + nextName + '…');
   return true;
 }
 
@@ -506,6 +1088,11 @@ function loadHlsScript() {
 function showHdControls(show) {
   var el = document.getElementById('hd-controls');
   if (el) el.hidden = !show;
+  /* v1.5.3 §5.5: #sub-select disembunyikan saat HD aktif (fungsinya
+     pindah ke seksi Bahasa menu ⋮). Elemen tetap ada di DOM dan tetap
+     diisi renderSubMenu (cermin state). */
+  var subSel = document.getElementById('sub-select');
+  if (subSel && subSel.parentElement) subSel.parentElement.hidden = !!show;
 }
 
 function stopHd() {
@@ -540,36 +1127,57 @@ async function playHdServer(entry, resumeTime) {
   video.hidden = false;
   showHdControls(true);
   updateServerIndicator(entry.name, 'active');
-  showPlayerLoading('Memuat Server HD…');
+  showPlayerLoading('Memuat Server Mitsunime…');
   var hd;
   try {
     hd = await getStreamHD(watch.anime.id, watch.epNum, watch.lang);
   } catch (err) {
-    onServerFailed(err && err.message ? err.message : 'Server HD tidak merespons');
+    onServerFailed(err && err.message ? err.message : 'Server Mitsunime tidak merespons');
     tryNextServer(false);
     return;
   }
   var d = hd && hd.data;
   if (!d || !d.hls_url) {
-    onServerFailed('Server HD tidak mengembalikan video');
+    onServerFailed('Server Mitsunime tidak mengembalikan video');
     tryNextServer(false);
     return;
   }
   watch.hd = { manifest: d, hls: null, useNative: false, mediaRecovered: false };
+  /* v1.5.1 (T5): patok AWAL dari varian terendah. Master MegaPlay
+     mengurutkan varian dari bitrate TERTINGGI ke terendah, TAPI hls.js
+     mengurutkan ulang level MENAIK menurut bitrate saat manifest
+     dimuat (terverifikasi via probe: levels[0] = 360p/409545,
+     levels[2] = 1080p/1969481) — jadi indeks TERENDAH selalu 0,
+     bukan indeks terakhir. Jumlah varian baru diketahui setelah
+     manifest dibaca: baca master dulu (same-origin, ~400 byte),
+     lalu bangun Hls dengan startLevel = 0 (bila varian > 1).
+     config.startLevel dihormati hls.js saat manifest dimuat;
+     nextLevel TIDAK dipakai — ia mematikan auto-level. Bila
+     pre-fetch gagal, startLevel -1 (perilaku lama). Auto-level
+     tetap aktif sesudah jalan — hanya AWAL yang dipatok rendah. */
+  var startLevel = -1;
+  try {
+    var masterRes = await fetch(d.hls_url, { cache: 'no-store' });
+    if (masterRes.ok) {
+      var masterText = await masterRes.text();
+      var variantCount = (masterText.match(/#EXT-X-STREAM-INF/g) || []).length;
+      if (variantCount > 1) startLevel = 0;
+    }
+  } catch (e) { /* perilaku lama */ }
   /* Muat hls.js (lazy) bila perlu; bila gagal dan browser tidak bisa
      HLS native → HD gagal → fallback. */
   var hls = null;
   var useNative = false;
   if (window.Hls && window.Hls.isSupported()) {
-    hls = new Hls({ maxBufferLength: 30, manifestLoadingMaxRetry: 2 });
+    hls = new Hls({ maxBufferLength: 30, manifestLoadingMaxRetry: 2, startLevel: startLevel });
   } else {
     var ok = await loadHlsScript();
     if (ok && window.Hls && window.Hls.isSupported()) {
-      hls = new Hls({ maxBufferLength: 30, manifestLoadingMaxRetry: 2 });
+      hls = new Hls({ maxBufferLength: 30, manifestLoadingMaxRetry: 2, startLevel: startLevel });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       useNative = true;
     } else {
-      onServerFailed('Browser ini tidak bisa memutar Server HD');
+      onServerFailed('Browser ini tidak bisa memutar Server Mitsunime');
       tryNextServer(false);
       return;
     }
@@ -610,6 +1218,8 @@ async function playHdServer(entry, resumeTime) {
       renderQualityMenu(hls.levels || []);
       if (resume > 0) { try { video.currentTime = resume; } catch (e) {} }
       video.play().catch(function () { /* pengguna menekan play sendiri */ });
+      /* Item 25 (b): episode baru mulai diputar → auto-rotate. */
+      autoRotateOnPlay();
     });
     hls.on(Hls.Events.ERROR, function (event, data) { onHlsError(data); });
     hls.loadSource(d.hls_url);
@@ -624,6 +1234,8 @@ async function playHdServer(entry, resumeTime) {
       });
     }
     video.play().catch(function () { /* pengguna menekan play sendiri */ });
+    /* Item 25 (b): episode baru mulai diputar → auto-rotate. */
+    autoRotateOnPlay();
   }
 }
 
@@ -643,13 +1255,16 @@ function onHlsError(data) {
     playHdServer(entry, t);
     return;
   }
-  onServerFailed('Server HD gagal memutar video');
+  onServerFailed('Server Mitsunime gagal memutar video');
   tryNextServer(false);
 }
 
 /* ---------- Server iframe ---------- */
 function playIframeServer(srv) {
   stopHd();
+  /* Item 25 (§5.3.3): pindah ke server iframe saat fullscreen aktif →
+     keluar fullscreen + unlock (unlock ikut fullscreenchange). */
+  if (document.fullscreenElement) { document.exitFullscreen().catch(function () {}); }
   var video = document.getElementById('player-video');
   if (video) { video.hidden = true; try { video.pause(); } catch (e) {} }
   var iframe = document.getElementById('player-iframe');
@@ -672,6 +1287,7 @@ function renderSubMenu(tracks) {
   if (!sel) return;
   var hasEn = tracks.some(function (t) { return t && t.lang === 'en'; });
   watch.subHasEn = hasEn;
+  watch.menuTracks = tracks; /* sumber baris Bahasa menu ⋮ (v1.5.3) */
   var html = '<option value="off">Off</option>';
   tracks.forEach(function (t) {
     if (!t || !t.lang) return;
@@ -682,9 +1298,21 @@ function renderSubMenu(tracks) {
   watch.subMode = hasEn ? 'id' : (tracks.length && tracks[0].lang ? tracks[0].lang : 'off');
   sel.value = watch.subMode;
   applySubMode();
+  renderMenuLang();
 }
 
 function applySubMode() {
+  /* T3: selama jeda toggle drop (50 ms), penegakan mode DITUNDA
+     (bukan dibuang) — pilihan bahasa pengguna tidak boleh hilang
+     bila terjadi tepat saat toggle. Dijadwalkan sekali, jalan
+     sesudah toggle selesai. */
+  if (cc.suppressApply) {
+    if (!cc.applyDeferred) {
+      cc.applyDeferred = true;
+      setTimeout(function () { cc.applyDeferred = false; applySubMode(); }, 70);
+    }
+    return;
+  }
   var video = document.getElementById('player-video');
   if (!video) return;
   var mode = watch.subMode;
@@ -695,6 +1323,11 @@ function applySubMode() {
     if (tt.label === 'Indonesia (AI)') continue; /* mode diatur engine */
     if (mode === 'off' || mode === 'id') tt.mode = 'disabled';
     else tt.mode = (tt.language === mode) ? 'showing' : 'disabled';
+  }
+  /* T3 (b): ikat pemicu cuechange pada track yang sedang showing
+     (sekali per objek track — lihat bindCueDrop). */
+  for (var j = 0; j < tracks.length; j++) {
+    if (tracks[j].mode === 'showing') bindCueDrop(tracks[j]);
   }
 }
 
@@ -711,14 +1344,17 @@ function onSubStatus(st) {
   } else if (st.state === 'translating') {
     html = 'Menerjemahkan subtitle…';
   } else if (st.state === 'partial') {
-    html = 'Subtitle Indonesia (AI) — ' + st.translated + '/' + st.total + ' cue';
+    /* v1.5.2 item 4 (A): hitungan "N/total cue" disembunyikan —
+       translate tetap jalan di latar belakang. Saat masih berjalan
+       (complete false) tidak ada teks sama sekali; saat selesai
+       dengan celah (complete true) tampil sinyal jujur tanpa
+       hitungan + tombol "Coba lagi" supaya pengguna tahu sebagian
+       subtitle masih Inggris dan bisa mengulang batch yang gagal. */
     if (st.complete) {
-      /* Terjemahan selesai tapi hanya sebagian (F-01): beri tombol
-         "Coba lagi" — tanpa ini pengguna tidak bisa tahu sebagian
-         besar subtitle masih Inggris, dan tidak ada jalan untuk
-         mengulang batch yang gagal. Selama translate masih berjalan
-         (complete false) tombol tidak tampil. */
+      html = 'Subtitle Indonesia (AI) — sebagian belum diterjemahkan';
       html += ' <button class="btn btn-ghost btn-sm" id="btn-sub-retry" type="button">Coba lagi</button>';
+    } else {
+      html = '';
     }
   } else if (st.state === 'complete') {
     html = 'Subtitle Indonesia (AI)';
@@ -732,6 +1368,8 @@ function onSubStatus(st) {
   if (retryBtn) retryBtn.addEventListener('click', function () {
     if (watch.subs) watch.subs.retry();
   });
+  /* v1.5.3: label "Menerjemahkan…" juga tampil di baris Bahasa menu ⋮. */
+  renderMenuLang();
 }
 
 function renderQualityMenu(levels) {
@@ -775,7 +1413,7 @@ function updateServerIndicator(name, state) {
   var note = document.getElementById('server-note');
   if (note) {
     note.textContent = state === 'failed'
-      ? 'Server ' + name + ' gagal, mencoba server berikutnya…'
+      ? name + ' gagal, mencoba server berikutnya…'
       : watch.serverIdx > 0 ? 'Memakai server cadangan ' + name + '.' : '';
   }
 }
@@ -788,6 +1426,11 @@ function showPlayerLoading(text) {
   ov.classList.remove('player__overlay--error');
   ov.classList.add('player__overlay--loading');
   watch.overlayKind = 'loading';
+  /* v1.5.3: bar custom disembunyikan selama overlay tampil (§5.2);
+     menu ikut tertutup. */
+  cc.overlayUp = true;
+  closePlayerMenu('overlay');
+  refreshBarDom();
   ov.innerHTML = '<div class="spinner" role="status" aria-label="Memuat video"></div>' +
     '<p>' + esc(text) + '</p>';
 }
@@ -802,6 +1445,9 @@ function showPlayerError(title, text, showLangBtn) {
   ov.classList.add('player__overlay--error');
   ov.classList.remove('player__overlay--loading');
   watch.overlayKind = 'error';
+  cc.overlayUp = true;
+  closePlayerMenu('overlay');
+  refreshBarDom();
   var hasServers = watch.servers && watch.servers.length > 0;
   var backHref = watch.anime ? '/detail.html?id=' + encodeURIComponent(watch.anime.id) : '/';
   ov.innerHTML = '<p class="player__overlay-title">' + esc(title) + '</p>' +
@@ -827,6 +1473,8 @@ function hidePlayerOverlay() {
   ov.hidden = true;
   ov.classList.remove('player__overlay--error', 'player__overlay--loading');
   watch.overlayKind = null;
+  cc.overlayUp = false;
+  refreshBarDom();
   ov.innerHTML = '';
 }
 
@@ -946,6 +1594,19 @@ function saveContinue(anime, episode, progress) {
   });
 }
 
+/* v1.5.4 fix F-02: posisi resume episode ini dari progres tersimpan.
+   0 bila tidak ada progres / tamu / posisi sudah di ujung episode
+   (sisa ≤5 dtk atau ≥95% — episode dianggap habis, mulai dari awal). */
+function resumePositionFor(epNum) {
+  var p = watch.progress && watch.progress[epNum];
+  if (!p) return 0;
+  var pos = typeof p.position_sec === 'number' ? p.position_sec : 0;
+  var dur = typeof p.duration_sec === 'number' ? p.duration_sec : 0;
+  if (pos <= 0) return 0;
+  if (dur > 0 && (pos >= dur - 5 || pos / dur >= 0.95)) return 0;
+  return pos;
+}
+
 async function loadProgress() {
   /* v1.4.5: tamu tidak memuat progres dari server ("Lanjutkan
      Menonton" hanya untuk yang login) — centang lokal tetap dipakai. */
@@ -1032,5 +1693,6 @@ async function loadRelated(anime) {
 }
 
 /* Pegangan uji (hanya baca): Cari Bug / Pentest memakai ini untuk
-   membaca state player + waktu subtitle tanpa mengubah perilaku. */
-window.__mitsu = { watch: watch };
+   membaca state player + waktu subtitle tanpa mengubah perilaku.
+   controls: state kontrol custom v1.5.3 (visible/menuOpen/dll). */
+window.__mitsu = { watch: watch, controls: cc };

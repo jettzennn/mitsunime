@@ -702,8 +702,12 @@ async function submitAddEmail() {
 
 /* ---------- Lupa password (alur tautan email) ----------
    Satu tahap saja di web: isi email -> POST /api/auth/password/
-   forgot. Respons server SELALU generik (tidak membocorkan apakah
-   email terdaftar). Email yang dikirim berisi tombol "Reset
+   forgot. v1.5.1 (Bentuk A): email TERDAFTAR dijawab generik
+   ("Tautan reset terkirim — cek email kamu.") + tombol masuk
+   cooldown 60 detik; email BELUM terdaftar dijawab JUJUR
+   (200 + code 'email_not_registered') dan pesannya tampil di
+   #forgot-error TANPA cooldown — pengguna bisa langsung mencoba
+   email lain. Email yang dikirim berisi tombol "Reset
    Password" yang menaut ke ?mode=reset&email&code — user membuka
    tautan itu dan HANYA mengisi password baru (kode dibaca dari
    URL, tidak diketik). TIDAK ada tombol kirim ulang terpisah:
@@ -746,6 +750,16 @@ async function submitForgot() {
   btn.textContent = 'Mengirim…';
   try {
     var out = await apiPost('/api/auth/password/forgot', { email: email });
+    if (out && out.code === 'email_not_registered') {
+      /* v1.5.1 (T4, Bentuk A): email belum terdaftar — pesan jujur
+         di #forgot-error (BUKAN #forgot-success — ini "tidak ada
+         akun", bukan sukses), TANPA cooldown 60 detik (tidak ada
+         email yang dikirim, pengguna harus bisa langsung mencoba
+         email lain). */
+      errEl.textContent = out.message || 'Akun belum terdaftar, silakan daftar terlebih dahulu.';
+      btn.textContent = 'Kirim Tautan Reset';
+      return;
+    }
     okEl.textContent = (out && out.message) || 'Tautan reset terkirim — cek email kamu.';
     /* Tombol yang sama masuk cooldown 60 detik (abu-abu +
        countdown) — tidak ada tombol kirim ulang lain di alur ini. */
@@ -1028,12 +1042,12 @@ async function loadHistorySection() {
 
 function historyCardHTML(item) {
   var score = scoreNum(item);
-  return '<div class="anime-card history-card" role="button" tabindex="0" data-history-anime="' + esc(item.id) + '" data-history-title="' + esc(item.title) + '" aria-label="Lihat episode ' + esc(item.title) + ' yang ditonton">' +
+  return '<div class="anime-card history-card" role="button" tabindex="0" data-history-anime="' + esc(item.id) + '" data-history-title="' + esc(displayTitle(item)) + '" aria-label="Lihat episode ' + esc(displayTitle(item)) + ' yang ditonton">' +
     '<div class="anime-card__poster">' + posterImg(item) +
       '<div class="anime-card__badges">' + badgesHTML(item, false) + '</div>' +
       (score != null ? '<span class="anime-card__score">' + icon('star') + ' ' + score.toFixed(2) + '</span>' : '') +
     '</div>' +
-    '<h3 class="anime-card__title">' + esc(item.title) + '</h3>' +
+    '<h3 class="anime-card__title">' + esc(displayTitle(item)) + '</h3>' +
     '<p class="anime-card__meta">' + esc(metaLine(item)) + '</p>' +
     '<p class="anime-card__continue">Ep ' + esc(item.episode) + ' · ' + esc(item.percent || 0) + '% ditonton · ' + esc(timeAgo(item.updated_at)) + '</p>' +
     '<p class="history-card__more">Lihat episode yang ditonton ›</p>' +

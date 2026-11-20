@@ -20,6 +20,7 @@ const accessoriesApi = require('./routes/accessories');
 const adminApi = require('./routes/admin');
 const { handleHealth } = require('./routes/health');
 const { autoSeedAdmin } = require('./services/adminSeed');
+const { syncLight } = require('./services/sync');
 
 // L-03: jangan biarkan satu galat tak tertangani mematikan server
 // diam-diam. Catat galatnya (dengan stack bila ada) dan biarkan proses
@@ -37,6 +38,7 @@ const MIME = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -260,6 +262,33 @@ server.listen(config.PORT, config.HOST, () => {
   }
   logger.info(`Gateway: ${config.PAYMENT_GATEWAY}${config.MIDTRANS_SERVER_KEY ? '' : ' (kunci Midtrans belum diisi — pembayaran akan menolak dengan 503)'}`);
   logger.info('Tekan Ctrl+C untuk berhenti.');
+  // v1.5.1 (§10): sync katalog ringan otomatis di dalam proses server —
+  // sekali saat start (fire-and-forget, tidak memblokir listen) + interval
+  // tiap AUTO_SYNC_INTERVAL_MINUTES menit. Guard anti-tumpang-tindih:
+  // bila jalan sebelumnya masih aktif, jadwal itu dilewati. Semua error
+  // sync hanya dicatat ke log — sync tidak pernah menjatuhkan server.
+  if (config.AUTO_SYNC) {
+    let syncRunning = false;
+    const runAutoSync = async (reason) => {
+      if (syncRunning) {
+        logger.info(`Sync otomatis (${reason}): jalan sebelumnya masih aktif, dilewati`);
+        return;
+      }
+      syncRunning = true;
+      try {
+        await syncLight();
+      } catch (e) {
+        logger.error(`Sync otomatis (${reason}) gagal: ${e && e.message ? e.message : String(e)}`);
+      } finally {
+        syncRunning = false;
+      }
+    };
+    runAutoSync('startup');
+    setInterval(
+      () => runAutoSync('interval'),
+      config.AUTO_SYNC_INTERVAL_MINUTES * 60 * 1000,
+    ).unref();
+  }
 });
 
 function shutdown() {

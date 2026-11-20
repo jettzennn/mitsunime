@@ -15,6 +15,13 @@ const TOLERANCE_MS = 10;
 const MAX_CUES_PER_SAVE = 50;
 const MAX_TEXT_CHARS = 1000;
 
+// Pola baris timestamp VTT (v1.5.4 item 24 / L-17 lapis A):
+// `MM:SS.mmm --> MM:SS.mmm` atau `HH:MM:SS.mmm --> HH:MM:SS.mmm`
+// (spasi di sekitar `-->` boleh berapa pun). Dicocokkan PER BARIS,
+// kedua sisi timestamp harus ada. Spasi/tab di depan baris ikut
+// dicocokkan (L-18: baris timestamp yang diindentasi juga ditolak).
+const VTT_TIMESTAMP_LINE = /^\s*\d{1,2}:\d{2}(?::\d{2})?\.\d{1,3}\s*-->\s*\d{1,2}:\d{2}(?::\d{2})?\.\d{1,3}/;
+
 class SubtitleError extends Error {
   constructor(status, message) {
     super(message);
@@ -156,6 +163,16 @@ function saveCues(animeId, episode, hash, cues) {
     }
     if (typeof cue.text !== 'string' || !cue.text.trim() || cue.text.length > MAX_TEXT_CHARS) {
       throw new SubtitleError(400, 'Teks terjemahan tidak valid (kosong atau lebih dari 1000 karakter).');
+    }
+    // v1.5.4 item 24 (L-17) lapis A: tolak teks yang berisi baris
+    // pola timestamp VTT. Satu baris seperti itu bisa menciptakan
+    // cue palsu saat dirakit buildVtt(). Pola diperiksa PER BARIS
+    // (bukan per seluruh teks) dan kedua sisi timestamp harus ada,
+    // supaya teks sah seperti "A --> B" tidak kena false positive.
+    for (const line of cue.text.split('\n')) {
+      if (VTT_TIMESTAMP_LINE.test(line)) {
+        throw new SubtitleError(400, 'Teks terjemahan tidak boleh berisi baris pola waktu (timestamp).');
+      }
     }
   }
   const upsert = db.prepare(`INSERT INTO subtitle_cues

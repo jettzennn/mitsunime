@@ -1,6 +1,7 @@
 'use strict';
-// Rute Server HD (v1.5.0, PRD §4–§5): resolusi stream-hd, proxy HLS/VTT
-// lewat token opaque, dan cache subtitle (check-cache + save).
+// Rute Server HD (v1.5.0, PRD §4–§5; mesin diganti ke MegaPlay di
+// v1.5.1, PRD §4): resolusi stream-hd, proxy HLS/VTT lewat token
+// opaque, dan cache subtitle (check-cache + save).
 // Semua fetch ke upstream dilakukan server-side; browser penonton HANYA
 // memanggil origin Mitsunime sendiri. URL/token upstream TIDAK PERNAH
 // keluar ke client, log, atau DB (anti-SSRF — kriteria Pentest §12.4).
@@ -9,7 +10,7 @@ const logger = require('../utils/logger');
 const mw = require('../middleware/auth');
 const anikoto = require('../services/anikoto');
 const cache = require('../services/cache');
-const vidcloud = require('../services/vidcloud');
+const megaplay = require('../services/megaplay');
 const subtitles = require('../services/subtitles');
 const proxyTokens = require('../services/proxyTokens');
 
@@ -104,6 +105,15 @@ async function handleStreamHd(req, res, url, idRaw, epRaw) {
   if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(epNum) || epNum <= 0) {
     return err(res, 404, 'Episode tidak ditemukan.');
   }
+  // L-16 (v1.5.1, PRD §4.6): rate limit stream-hd itu sendiri, 30/menit,
+  // TERLEPAS dari status cache — di awal handler, sebelum loadSeriesForHd.
+  // Kunci terpisah dari guard cache-miss `stream-hd-miss:*` (yang tetap ada).
+  const hdKey = req.user
+    ? `stream-hd:user:${req.user.id}`
+    : `stream-hd:guest:${mw.clientIp(req)}`;
+  if (mw.rateLimited(hdKey, 30, 60 * 1000)) {
+    return err(res, 429, 'Terlalu banyak permintaan. Coba lagi sebentar lagi.');
+  }
   const lang = url.searchParams.get('lang') === 'dub' ? 'dub' : 'sub';
   const loaded = await loadSeriesForHd(req, res, id);
   if (!loaded) return true;
@@ -111,37 +121,66 @@ async function handleStreamHd(req, res, url, idRaw, epRaw) {
   const episodes = Array.isArray(data.episodes) ? data.episodes : [];
   const ep = episodes.find((x) => x && Number.parseInt(x.number, 10) === epNum);
   if (!ep) return err(res, 404, `Episode ${epNum} tidak ada untuk judul ini.`);
-  const aRaw = (data.anime && typeof data.anime === 'object') ? data.anime : {};
-  const aniId = aRaw.ani_id != null && String(aRaw.ani_id) !== '' ? String(aRaw.ani_id) : null;
-  const malId = aRaw.mal_id != null && String(aRaw.mal_id) !== '' ? String(aRaw.mal_id) : null;
-  const extId = aniId || malId;
-  if (!extId) return err(res, 404, 'Episode ini belum punya tautan Server HD.');
+  // v1.5.1: Server HD bermesin MegaPlay — diidentifikasi lewat
+  // episode_embed_id Anikoto (field yang sama dipakai URL iframe MegaPlay).
+  // ani_id/mal_id TIDAK lagi dipakai untuk Server HD (tetap dipakai
+  // buildServers untuk URL iframe — servers.js tidak berubah).
+  const episodeEmbedId = ep.episode_embed_id != null && String(ep.episode_embed_id) !== ''
+    ? String(ep.episode_embed_id) : null;
+  if (!episodeEmbedId) return err(res, 404, 'Episode ini belum punya tautan Server HD.');
   let resolved;
   try {
-    resolved = await vidcloud.resolveSources(extId, epNum, lang);
+    resolved = await megaplay.resolveSources(episodeEmbedId, epNum, lang);
   } catch (e) {
-    // Pesan e TIDAK mengandung URL upstream (vidcloud.js menjaminnya).
-    logger.warn(`stream-hd/${id}/${epNum}: VidCloud gagal (${e.message})`);
-    return err(res, 502, 'VidCloud sedang tidak dapat dijangkau.');
+    // Pesan e TIDAK mengandung URL upstream (megaplay.js menjaminnya).
+    logger.warn(`stream-hd/${id}/${epNum}: MegaPlay gagal (${e.message})`);
+    return err(res, 502, 'MegaPlay sedang tidak dapat dijangkau.');
   }
   const masterUrl = resolved.sources && resolved.sources[0] && resolved.sources[0].file;
   if (typeof masterUrl !== 'string' || !/^https?:\/\//.test(masterUrl)) {
-    return err(res, 502, 'VidCloud sedang tidak dapat dijangkau.');
+    return err(res, 502, 'MegaPlay sedang tidak dapat dijangkau.');
   }
   const hlsToken = proxyTokens.issue(masterUrl, 'master');
   // Track subtitle: hanya label yang terpetakan ke kode bahasa.
+  // Satu entri per bahasa — track non-Forced (Full) menang; Forced hanya
+  // disimpan bila tidak ada non-Forced bahasa itu (§7F.3 (b), item 19).
+  const picked = new Map(); // lang -> { label, file, isDefault, forced }
+  for (const t of (Array.isArray(resolved.tracks) ? resolved.tracks : [])) {
+    if (!t || typeof t.file !== 'string' || !/^https?:\/\//.test(t.file)) continue;
+    const lg = megaplay.trackLang(t.label);
+    if (!lg) continue;
+    const forced = megaplay.isForcedTrack(t);
+    const cur = picked.get(lg);
+    if (cur) {
+      // Sudah ada entri: ganti HANYA bila yang tersimpan Forced dan yang
+      // baru bukan Forced. Selain itu simpan yang pertama.
+      if (!(cur.forced && !forced)) continue;
+    }
+    picked.set(lg, { label: t.label, file: t.file, isDefault: t.default === true, forced });
+  }
   const tracks = [];
   let enFile = null;
   let hasDefault = false;
-  for (const t of (Array.isArray(resolved.tracks) ? resolved.tracks : [])) {
-    if (!t || typeof t.file !== 'string' || !/^https?:\/\//.test(t.file)) continue;
-    const lg = vidcloud.trackLang(t.label);
-    if (!lg) continue;
-    const token = proxyTokens.issue(t.file, 'vtt');
-    const isDefault = t.default === true;
-    if (isDefault) hasDefault = true;
-    tracks.push({ label: t.label, lang: lg, url: `/api/hd/sub/${token}`, default: isDefault });
-    if (lg === 'en' && !enFile) enFile = t.file;
+  for (const [lg, p] of picked) {
+    const token = proxyTokens.issue(p.file, 'vtt');
+    if (p.isDefault) hasDefault = true;
+    tracks.push({ label: p.label, lang: lg, url: `/api/hd/sub/${token}`, default: p.isDefault });
+    if (lg === 'en' && !enFile) enFile = p.file;
+  }
+  // PRD §5.1.1 langkah 2: bila belum ada track Inggris dari label,
+  // pakai petunjuk nama file ('eng' di URL) — jangan menebak track pertama.
+  if (!enFile) {
+    const enTrack = megaplay.englishTrack(resolved.tracks);
+    if (enTrack) {
+      const token = proxyTokens.issue(enTrack.file, 'vtt');
+      tracks.push({
+        label: (enTrack.label && String(enTrack.label).trim()) || 'English',
+        lang: 'en',
+        url: `/api/hd/sub/${token}`,
+        default: false,
+      });
+      enFile = enTrack.file;
+    }
   }
   if (!hasDefault) {
     const en = tracks.find((t) => t.lang === 'en');
@@ -154,7 +193,7 @@ async function handleStreamHd(req, res, url, idRaw, epRaw) {
   let cacheStatus = { status: 'none', cue_count: 0, translated_count: 0 };
   if (enFile) {
     try {
-      const vttText = await vidcloud.fetchText(enFile, FETCH_TIMEOUT_MS);
+      const vttText = await megaplay.fetchText(enFile, FETCH_TIMEOUT_MS);
       const cues = subtitles.parseVtt(vttText);
       if (cues.length > 0) {
         sourceHash = subtitles.sourceHash(vttText);
@@ -240,9 +279,14 @@ async function fetchUpstream(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
+    // v1.5.1 (PRD §4.4): SEMUA fetch upstream lewat proxy HD wajib
+    // mengirim Referer MegaPlay persis — tanpa header ini CDN menjawab 403.
     return await fetch(url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'Mitsunime/1.5.0 (server)' },
+      headers: {
+        Referer: megaplay.CDN_REFERER,
+        'User-Agent': 'Mitsunime/1.5.1 (server)',
+      },
     });
   } finally {
     clearTimeout(timer);

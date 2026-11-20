@@ -230,6 +230,9 @@ h1, h2, h3 { margin: 0; line-height: 1.1; }
   width: min(320px, 85vw); background: var(--bg);
   border-right: 1px solid var(--border);
   padding: 20px 16px; overflow-y: auto;
+  /* v1.5.2 item 7: tahan rambatan scroll — scroll sentuh di dalam
+     drawer tidak merambat ke body di belakangnya. */
+  overscroll-behavior: contain;
   display: flex; flex-direction: column; gap: 4px;
 }
 .drawer a {
@@ -380,12 +383,52 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 .hero__thumbs {
   position: absolute; right: clamp(16px, 3.75vw, 48px); bottom: clamp(20px, 2.5vw, 32px);
   z-index: 3; display: none; gap: 12px;
+  /* v1.5.1 (T6): lebar baris DIKET ke ruang kosong di kanan zona
+     konten — tidak boleh menutupi .hero__actions/.hero__controls
+     dan tidak boleh meluber melewati tepi hero. Baris lama lebarnya
+     tetap 1.548 px (5 x 300 px) dan di 1366 meluber 262 px ke kiri,
+     menutupi tombol 100%. Zona konten: kiri clamp(16px, 3.75vw, 48px)
+     + lebar clamp(320px, 40.63vw, 1200px); celah 32 px. */
+  max-width: calc(100% - clamp(16px, 3.75vw, 48px) - clamp(320px, 40.63vw, 1200px) - 32px - clamp(16px, 3.75vw, 48px));
+  overflow: hidden;
 }
 @media (min-width: 900px) { .hero__thumbs { display: flex; } }
+/* v1.5.2 item 8 (A): strip horizontal yang bisa di-scroll di HP.
+   Thumb duduk di baris sendiri di bawah hero — hero ditinggikan
+   76 px dan konten + kontrol digeser ke atas sebesar itu supaya
+   strip tidak menutupi apa pun (Tonton/Detail tetap 0% tertutup,
+   aturan v1.5.1). Thumb 104 px lebar = ±58 px tinggi (target
+   sentuh ≥ 44 px). */
+@media (max-width: 899px) {
+  .hero { height: calc(clamp(560px, 50vw, 1400px) + 76px); }
+  .hero__content { bottom: calc(clamp(96px, 10vw, 130px) + 76px); }
+  .hero__controls { bottom: calc(clamp(20px, 2.5vw, 32px) + 76px); }
+  .hero__thumbs {
+    display: flex;
+    left: clamp(16px, 3.75vw, 48px); right: clamp(16px, 3.75vw, 48px); bottom: 10px;
+    max-width: none; overflow-x: auto; gap: 8px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .hero__thumbs::-webkit-scrollbar { display: none; }
+  /* Selektor .hero__thumbs .hero__thumb (spesifisitas lebih tinggi
+     dari aturan dasar .hero__thumb yang muncul belakangan di file)
+     supaya lebar tetap 104 px dan tidak menyusut jadi 59 px. */
+  .hero__thumbs .hero__thumb { flex: 0 0 auto; width: 104px; max-width: none; }
+}
 .hero__thumb {
-  width: clamp(200px, 23.4vw, 300px); aspect-ratio: 16 / 9;
+  flex: 1 1 0; min-width: 0; max-width: 300px; aspect-ratio: 16 / 9;
   border-radius: 12px; overflow: hidden; padding: 0; border: 2px solid transparent;
-  background: var(--surface); position: relative; flex-shrink: 0;
+  background: var(--surface); position: relative;
+}
+/* v1.5.1 (T6): jumlah thumb per breakpoint — supaya thumb tetap
+   berukuran layak: 3 thumb di laptop (900–1599), 4 di FHD
+   (1600–2559), 5 di ultrawide (≥2560). Navigasi slide tetap
+   lengkap lewat panah + dots. */
+@media (min-width: 900px) and (max-width: 1599px) {
+  .hero__thumb:nth-child(n+4) { display: none; }
+}
+@media (min-width: 1600px) and (max-width: 2559px) {
+  .hero__thumb:nth-child(n+5) { display: none; }
 }
 .hero__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .hero__thumb.is-active { border-color: var(--lime); }
@@ -453,7 +496,12 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 }
 .anime-card:hover .anime-card__poster { transform: translateY(-4px); border-color: rgba(199, 246, 50, 0.5); }
 .anime-card__poster img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.anime-card__badges { position: absolute; left: 8px; top: 8px; display: flex; gap: 6px; flex-wrap: wrap; max-width: calc(100% - 16px); }
+.anime-card__badges { position: absolute; left: 8px; top: 8px; display: flex; gap: 6px; flex-wrap: wrap;
+  /* v1.5.2 item 6: sisakan ruang untuk badge skor (★, kanan atas,
+     ±61 px + jarak 8 px + tepi kiri 8 px) supaya baris badge tidak
+     pernah beririsan dengan skor; badge berlebih membungkus ke
+     baris kedua di bawah, bukan menabrak skor. */
+  max-width: calc(100% - 84px); }
 .anime-card__score {
   position: absolute; right: 8px; top: 8px;
   display: inline-flex; align-items: center; gap: 4px;
@@ -630,6 +678,130 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
   border: 0; background: #000; display: block;
 }
 .player video[hidden] { display: none; }
+
+/* Item 28 (v1.5.5): fallback auto-rotate — bila screen.orientation.lock
+   tidak berpengaruh (rotasi sistem di-lock), ISI player diputar 90°
+   searah jarum jam + tukar lebar/tinggi, sehingga jejaknya TEPAT
+   memenuhi viewport portrait. Rotasi WAJIB pada .player__stage (bukan
+   .player): stylesheet UA :fullscreen Chrome memaksa transform:none +
+   inset:0 + width/height 100% pada elemen fullscreen itu sendiri, jadi
+   aturan transform di .player tidak pernah terlihat (terbukti probe
+   2026-11-20: computed transform "none" saat fullscreen + kelas aktif;
+   di luar fullscreen aturan yang sama bekerja — matrix rotasi 90°).
+   .player__stage tanpa fallback adalah pass-through (inset:0) sehingga
+   tampilan normal tidak berubah. */
+.player__stage { position: absolute; inset: 0; }
+.player.ar-css-fallback .player__stage {
+  left: 50%; top: 50%;
+  width: 100vh; height: 100vw; max-width: none;
+  transform: translate(-50%, -50%) rotate(90deg);
+  transform-origin: center center;
+}
+
+/* ---------- Kontrol player custom (v1.5.3 item 13) ---------- */
+.player__bar {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px;
+  background: linear-gradient(to top, rgba(0,0,0,0.82), rgba(0,0,0,0.45) 70%, transparent);
+}
+.player__bar[hidden] { display: none; }
+.player-btn {
+  flex: 0 0 auto; width: 44px; height: 44px; border: 0; border-radius: 8px;
+  background: transparent; color: #fff; display: inline-flex;
+  align-items: center; justify-content: center; cursor: pointer; padding: 0;
+}
+.player-btn:hover { background: rgba(255,255,255,0.16); }
+.player-btn:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+.player-btn .player-ic--pause { display: none; }
+.player-btn.is-playing .player-ic--play { display: none; }
+.player-btn.is-playing .player-ic--pause { display: block; }
+.player-btn .player-ic--muted { display: none; }
+.player-btn.is-muted .player-ic--vol { display: none; }
+.player-btn.is-muted .player-ic--muted { display: block; }
+.player-time {
+  flex: 0 0 auto; font-size: 12px; color: #fff; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.player-seek { flex: 1 1 auto; min-width: 0; height: 44px; accent-color: var(--lime); cursor: pointer; }
+.player-vol { flex: 0 0 auto; width: clamp(64px, 8vw, 96px); height: 44px; accent-color: #fff; cursor: pointer; }
+@media (max-width: 479px) { .player-vol { display: none; } }
+.player__center {
+  position: absolute; inset: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: center; pointer-events: none;
+}
+.player__center[hidden] { display: none; }
+.player-center-btn {
+  pointer-events: auto; width: 72px; height: 72px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.85); background: rgba(0,0,0,0.55);
+  color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.player-center-btn:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.player__menu {
+  position: absolute; right: 8px; bottom: 62px; z-index: 4;
+  display: flex; max-width: calc(100% - 16px); max-height: 70%;
+  overflow-y: auto; background: rgba(14,17,21,0.97);
+  border: 1px solid var(--border); border-radius: 12px; padding: 10px 4px;
+  color: var(--text);
+}
+.player__menu[hidden] { display: none; }
+.player-menu__col { min-width: 0; padding: 0 8px; }
+#menu-lang { flex: 34 1 0; }
+#menu-speed { flex: 26 1 0; }
+#menu-sub { flex: 40 1 0; }
+.player-menu__col + .player-menu__col { border-left: 1px solid var(--border); }
+.player-menu__title { font-size: 12px; font-weight: 700; color: var(--text-dim); margin: 0 0 6px; }
+.player-menu__list { display: flex; flex-direction: column; gap: 2px; }
+.player-menu__row {
+  display: flex; align-items: center; gap: 4px; width: 100%;
+  min-height: 32px; padding: 4px 6px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--text); font-size: 12px;
+  text-align: left; cursor: pointer;
+}
+.player-menu__row:hover { background: rgba(255,255,255,0.08); }
+.player-menu__row:focus-visible { outline: 2px solid var(--lime); outline-offset: 0; }
+.player-menu__row.is-active { background: rgba(163,230,53,0.16); color: var(--lime); font-weight: 700; }
+.player-menu__label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.player-menu__check { flex: 0 0 auto; width: 14px; height: 14px; visibility: hidden; color: var(--lime); }
+.player-menu__check svg { width: 14px; height: 14px; display: block; }
+.player-menu__row.is-active .player-menu__check { visibility: visible; }
+
+/* Isi seksi Subtitle di menu ⋮ (item 14, T2). Kolom #menu-sub sempit
+   (~40% lebar menu), jadi tiap pengaturan ditumpuk: label di atas,
+   kontrol selebar kolom. Baris kontrol ≥32 px, teks ≥12 px. */
+.sub-field { display: flex; flex-direction: column; gap: 2px; padding: 3px 0; min-width: 0; }
+.sub-label { font-size: 12px; color: var(--text-dim); }
+.sub-select {
+  width: 100%; min-height: 32px; padding: 0 6px; font-size: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; color: var(--text);
+}
+.sub-select:focus-visible { outline: 2px solid var(--lime); outline-offset: 0; }
+.sub-range { width: 100%; height: 32px; margin: 0; accent-color: var(--lime); cursor: pointer; }
+.sub-row { display: flex; align-items: center; gap: 6px; min-height: 32px; }
+.sub-color {
+  flex: 0 0 auto; width: 28px; height: 28px; padding: 0;
+  border: 1px solid var(--border); border-radius: 6px; background: transparent; cursor: pointer;
+}
+.sub-swatches { display: flex; align-items: center; gap: 4px; }
+.sub-swatch {
+  width: 22px; height: 22px; padding: 0; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.35); cursor: pointer;
+}
+.sub-swatch.is-active { border-color: var(--lime); box-shadow: 0 0 0 1px var(--lime); }
+.sub-swatch:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+.sub-reset {
+  width: 100%; min-height: 32px; margin-top: 6px; padding: 4px 8px;
+  border: 1px solid var(--border); border-radius: 8px; background: transparent;
+  color: var(--text); font-size: 12px; cursor: pointer;
+}
+.sub-reset:hover { background: rgba(255,255,255,0.08); }
+.sub-reset:focus-visible { outline: 2px solid var(--lime); outline-offset: 0; }
+
+/* Item 18 (T2): sembunyikan tombol × bawaan Chrome HANYA pada input
+   pencarian utama. Input admin (#user-search, #anime-search) TIDAK
+   disentuh — × bawaan tetap satu-satunya cara menghapus di sana. */
+#search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -776,6 +948,24 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 }
 .genre-card:hover { border-color: var(--lime); color: var(--lime); }
 .genre-card .count { color: var(--text-dim); font-weight: 500; font-size: 13px; }
+
+/* ---------- Genre + filter mobile (v1.5.3, item 22+23) ----------
+   HANYA ≤767 px: genre jadi grid 2 kolom (pola multi-kolom seperti
+   A–Z), filter bertumpuk full-width di bawah genre. Desktop ≥768 px
+   tidak berubah. Hitungan (§7D.3): sel 2 kolom di 360 px = 160 px,
+   muat chip terlebar "Slice of Life" ±125 px; sel 3 kolom ≈104 px
+   tidak muat — karena itu 2 kolom, bukan 3. */
+@media (max-width: 767px) {
+  #genre-chips { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  #genre-chips .chip { justify-content: center; }
+  .genre-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  /* Kartu "Slice of Life 1292 judul" (±228 px bila nama + count
+     sejajar) tidak muat di sel ±160 px — count turun ke barisnya
+     sendiri di bawah nama; font tidak diperkecil (count tetap 13 px). */
+  .genre-card { flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; }
+  .filters { flex-direction: column; align-items: stretch; overflow-x: visible; }
+  .filters select { width: 100%; }
+}
 .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
 .pagination .page-info { color: var(--text-dim); font-size: 14px; padding: 0 8px; }
 
@@ -987,4 +1177,37 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
   html { scroll-behavior: auto; }
+}
+
+/* ---------- Banner "Install aplikasi" PWA (v1.5.4) ----------
+   Bar bawah tetap, hanya di beranda. Latar --surface, aksen --lime,
+   teks >= 12 px, tombol >= 44 px tinggi, tanpa overflow horizontal
+   di 390 px (teks boleh membungkus; ikon + tombol tidak menyusut). */
+.pwa-banner {
+  position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 80;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 10px 12px;
+  box-shadow: 0 16px 40px var(--shadow);
+  max-width: 520px; margin: 0 auto;
+}
+.pwa-banner__icon { flex: 0 0 auto; width: 40px; height: 40px; border-radius: 10px; }
+.pwa-banner__text {
+  flex: 1 1 auto; min-width: 0; color: var(--text);
+  font-size: 13px; line-height: 1.35;
+}
+.pwa-banner__install {
+  flex: 0 0 auto; min-height: 44px; padding: 0 16px;
+  border: none; border-radius: 10px; cursor: pointer;
+  background: var(--lime); color: var(--text-dark);
+  font-size: 14px; font-weight: 700;
+}
+.pwa-banner__close {
+  flex: 0 0 auto; width: 44px; height: 44px; border: none;
+  background: transparent; color: var(--text-dim);
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+@media (max-width: 360px) {
+  .pwa-banner__text { font-size: 12px; }
+  .pwa-banner__install { padding: 0 12px; }
 }

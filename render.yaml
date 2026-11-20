@@ -1,0 +1,63 @@
+# Mitsunime — Blueprint Render (deploy gratis, plan Free).
+# Cara pakai: hubungkan repo ini ke Render (New → Web Service → pilih repo),
+# Render membaca file ini otomatis. Nilai dengan `sync: false` TIDAK diisi
+# di sini — isi di dashboard Render sebagai secret (lihat panduan deploy).
+# JANGAN tulis password/kunci apa pun di file ini.
+services:
+  - type: web
+    name: mitsunime
+    runtime: node
+    plan: free
+    # Tanpa dependensi npm — tidak ada build step. `npm install` di sini
+    # hanya no-op yang aman; start langsung menjalankan server.
+    buildCommand: npm install
+    startCommand: node server/server.js
+    # /api/health mengembalikan 200 segera setelah server listen (bahkan
+    # sebelum sync katalog selesai), jadi health check Render tidak
+    # menunggu sync.
+    healthCheckPath: /api/health
+    envVars:
+      # Versi Node: pin utama ada di package.json (engines >= 22.5,
+      # wajib untuk node:sqlite). NODE_VERSION di sini pengaman saja.
+      - key: NODE_VERSION
+        value: "22"
+      - key: HOST
+        value: 0.0.0.0
+      # PORT JANGAN diisi — Render menyuntikkan PORT-nya sendiri, dan
+      # server membaca process.env.PORT (config.js).
+      # Alamat publik situs — isi di dashboard SETELAH deploy pertama,
+      # sesuai URL asli yang diberikan Render (mis. https://mitsunime.onrender.com).
+      # Dipakai untuk tautan di email (mis. reset password).
+      - key: BASE_URL
+        sync: false
+      # Situs publik Render selalu HTTPS → cookie sesi HARUS Secure,
+      # kalau tidak login tidak akan tersimpan.
+      - key: COOKIE_SECURE
+        value: "true"
+      # Rute admin tersembunyi (bukan rahasia — alamatnya saja; yang
+      # melindungi dashboard adalah password admin).
+      - key: ADMIN_PATH
+        value: /a-faygodev21
+      # Auto-seed admin: bila DB belum punya admin, server membuat akun
+      # admin dari dua nilai ini saat pertama start. ADMIN_USER bukan
+      # rahasia; ADMIN_PASS ADALAH rahasia — isi di dashboard.
+      - key: ADMIN_USER
+        value: faygo
+      - key: ADMIN_PASS
+        sync: false
+      # Opsional: email untuk kuota MyMemory (sinopsis). Kosong = anonim.
+      - key: MYMEMORY_EMAIL
+        sync: false
+      # Opsional: SMTP Gmail untuk OTP verifikasi email. Kosong =
+      # verifikasi nonaktif, register/login jalan seperti biasa.
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      # Opsional: Midtrans (pembayaran premium). Kosong = hanya QRIS manual.
+      - key: MIDTRANS_SERVER_KEY
+        sync: false
+      - key: MIDTRANS_CLIENT_KEY
+        sync: false
