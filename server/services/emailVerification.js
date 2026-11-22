@@ -191,7 +191,7 @@ function otpHtmlBody(code, email, variant) {
   const ignoreText = isReset
     ? 'Abaikan email ini jika kamu tidak meminta reset password — password kamu tidak berubah.'
     : '';
-  const fontUi = "'Plus Jakarta Sans','Inter',system-ui,sans-serif";
+  const fontUi = "'Plus Jakarta Sans',system-ui,sans-serif";
   const fontDisplay = "'Anton','Arial Black',sans-serif";
   // Kode 6 digit: font bold LAIN, bukan Anton-nya logo (keputusan
   // pengguna 2026-11-17) — warna tetap lime.

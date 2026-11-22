@@ -277,6 +277,23 @@ function sidebarAvatarStyle(u) {
   return '';
 }
 
+/* Foto profil Google (v1.5.7, item 37, D16): bila user.avatar_url
+   terisi, avatar = foto Google (bukan huruf). Dipakai avatar header
+   + avatar di kaki sidebar. Gaya preset TIDAK dipakai bila ada foto. */
+function headerAvatarInner(u) {
+  if (u && u.avatar_url) {
+    /* v1.5.8 item 40: tanpa loading="lazy" — avatar 44 px di atas
+       lipatan; lazy menunda foto sampai ~3 dtk sesudah header dan tiap
+       remount memulai ulang unduhannya. */
+    return '<img src="' + esc(u.avatar_url) + '" alt="" referrerpolicy="no-referrer">';
+  }
+  return esc((u.username || '?').charAt(0).toUpperCase());
+}
+function headerAvatarStyle(u) {
+  if (!u || u.avatar_url) return '';
+  return sidebarAvatarStyle(u);
+}
+
 /* Kaki sidebar (v1.3.3): area PALING BAWAH drawer, terpisah dari
    menu navigasi. Ini AKUN ala Google (bukan profil web): container
    akunnya hanya berisi urusan akun — Ganti Email, Ganti Password,
@@ -284,7 +301,9 @@ function sidebarAvatarStyle(u) {
    Tamu: tautan Masuk/Daftar tanpa popover. */
 function drawerFooterHTML(user) {
   if (!user || !user.user) {
-    return '<div class="drawer__footer">' +
+    /* v1.5.8 item 40: id="drawer-footer" juga di cabang tamu — supaya
+       pembaruan sesi di tempat selalu menemukan kaki drawer. */
+    return '<div class="drawer__footer" id="drawer-footer">' +
       '<a class="drawer__account drawer__account--guest" href="/account.html?mode=login" aria-label="Masuk atau daftar">' +
         '<span class="header-avatar header-avatar--guest">' + icon('user') + '</span>' +
         '<span class="drawer__account-text"><strong>Belum masuk</strong>' +
@@ -292,8 +311,7 @@ function drawerFooterHTML(user) {
       '</a></div>';
   }
   var u = user.user;
-  var letter = esc((u.username || '?').charAt(0).toUpperCase());
-  var style = sidebarAvatarStyle(u);
+  var style = headerAvatarStyle(u);
   var emailText = u.email ? esc(u.email) : 'Belum ada email';
   return '<div class="drawer__footer" id="drawer-footer">' +
     '<div class="drawer-account-popover" id="drawer-account-popover" hidden role="menu" aria-label="Menu akun">' +
@@ -303,11 +321,20 @@ function drawerFooterHTML(user) {
       '<button type="button" id="drawer-logout-btn" role="menuitem">' + icon('logout') + '<span>Keluar</span></button>' +
     '</div>' +
     '<button class="drawer__account" id="drawer-account-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="drawer-account-popover" aria-label="Menu akun ' + esc(u.username || '') + '">' +
-      '<span class="header-avatar" style="' + style + '">' + letter + '</span>' +
+      '<span class="header-avatar" style="' + style + '">' + headerAvatarInner(u) + '</span>' +
       '<span class="drawer__account-text"><strong>' + esc(u.username || '') + '</strong>' +
       '<span class="drawer__account-email">' + emailText + '</span></span>' +
       '<span class="drawer__account-chevron" aria-hidden="true">' + icon('chevron') + '</span>' +
     '</button></div>';
+}
+
+/* Tombol akun di header (v1.5.8 item 40): diekstrak supaya pembaruan sesi
+   di tempat bisa mengganti simpul ini saja tanpa menggambar ulang chrome. */
+function accountBtnHTML(user) {
+  if (user && user.user) {
+    return '<a class="header-avatar" href="/account.html" style="' + headerAvatarStyle(user.user) + '" aria-label="Akun ' + esc(user.user.username) + '">' + headerAvatarInner(user.user) + '</a>';
+  }
+  return '<a class="header-icon-btn" href="/account.html" aria-label="Masuk atau daftar">' + icon('user') + '</a>';
 }
 
 /* ---------- Chrome: header, footer, drawer ---------- */
@@ -325,15 +352,7 @@ function chromeHTML(active, user) {
   var drawerLinks = nav.map(function (n) {
     return '<a href="' + n.href + '"' + (active === n.key ? ' class="is-active" aria-current="page"' : '') + '>' + icon(n.icon) + '<span>' + n.label + '</span></a>';
   }).join('');
-  var premiumBtn = '';
-  if (user && user.premium && user.premium.is_premium) {
-    premiumBtn = '<span class="chip-status chip-status--premium">' + icon('crown') + ' PREMIUM</span>';
-  } else {
-    premiumBtn = '<a class="btn btn-primary btn-sm header-premium-btn" href="/premium.html">Premium</a>';
-  }
-  var accountBtn = user
-    ? '<a class="header-avatar" href="/account.html" style="' + sidebarAvatarStyle(user.user) + '" aria-label="Akun ' + esc(user.user.username) + '">' + esc((user.user.username || '?').charAt(0).toUpperCase()) + '</a>'
-    : '<a class="header-icon-btn" href="/account.html" aria-label="Masuk atau daftar">' + icon('user') + '</a>';
+  var accountBtn = accountBtnHTML(user);
   return {
     header:
       '<header class="site-header"><div class="site-header__inner">' +
@@ -342,7 +361,7 @@ function chromeHTML(active, user) {
         '<nav class="site-nav" aria-label="Navigasi utama">' + top + '</nav>' +
         '<div class="header-actions">' +
           '<button class="header-icon-btn" id="btn-header-search" type="button" aria-label="Cari anime">' + icon('search') + '</button>' +
-          premiumBtn + accountBtn +
+          accountBtn +
         '</div>' +
       '</div></header>' +
       '<div class="drawer-backdrop" id="drawer-backdrop" hidden></div>' +
@@ -351,9 +370,8 @@ function chromeHTML(active, user) {
         '<button class="header-icon-btn" id="btn-drawer-close" type="button" aria-label="Tutup menu">' + icon('x') + '</button></div>' +
         '<nav class="drawer__nav" aria-label="Menu sidebar">' +
         drawerLinks +
-        '<a href="/premium.html">' + icon('crown') + '<span>Premium</span></a>' +
-        (user ? '<a href="/account.html">' + icon('user') + '<span>Akun Saya</span></a>'
-          : '<a href="/account.html?mode=login">' + icon('user') + '<span>Masuk / Daftar</span></a>') +
+        (user ? '<a href="/account.html" id="drawer-account-link">' + icon('user') + '<span>Akun Saya</span></a>'
+          : '<a href="/account.html?mode=login" id="drawer-account-link">' + icon('user') + '<span>Masuk / Daftar</span></a>') +
         '</nav>' +
         drawerFooterHTML(user) +
       '</div>',
@@ -361,12 +379,12 @@ function chromeHTML(active, user) {
       '<footer class="site-footer"><div class="footer-inner">' +
         '<div class="footer-logo">Mitsunime</div>' +
         '<div class="footer-cols">' +
-          '<div class="footer-col"><h4>Tentang</h4><p class="muted" style="font-size:14px;margin:0">Mitsunime, streaming anime berbahasa Indonesia.</p></div>' +
+          '<div class="footer-col"><h4>Tentang</h4><p class="muted" style="font-size:14px;margin:0">Mitsunime, streaming anime berbahasa Indonesia.</p><p class="muted" style="font-size:14px;margin:6px 0 0">Hubungi kami: <a href="mailto:mitsunime99@gmail.com">mitsunime99@gmail.com</a></p></div>' +
           '<div class="footer-col"><h4>Navigasi</h4><a href="/">Beranda</a><a href="/search.html">Pencarian</a><a href="/genre.html">Genre</a><a href="/az.html">Daftar A–Z</a><a href="/favorites.html">Daftar Saya</a></div>' +
-          '<div class="footer-col"><h4>Akun</h4><a href="/account.html">Akun Saya</a><a href="/premium.html">Paket Premium</a></div>' +
-          '<div class="footer-col"><h4>Bantuan</h4><a href="/premium.html">Cara Berlangganan</a><a href="/account.html">Kelola Akun</a></div>' +
+          '<div class="footer-col"><h4>Akun</h4><a href="/account.html">Akun Saya</a></div>' +
+          '<div class="footer-col"><h4>Bantuan</h4><a href="/privacy.html">Kebijakan Privasi</a><a href="/terms.html">Ketentuan Layanan</a><a href="/account.html">Kelola Akun</a></div>' +
         '</div>' +
-        '<div class="footer-bottom"><span>© 2026 Mitsunime. Situs ini untuk pemakaian pribadi.</span>' +
+        '<div class="footer-bottom"><span>© 2026 Mitsunime. All rights reserved.</span>' +
         '<span class="footer-status" id="footer-server-status"><span class="dot"></span><span id="footer-server-text">Memeriksa server…</span></span></div>' +
       '</div></footer>',
   };
@@ -411,9 +429,59 @@ function applyChrome(c) {
   refreshServerStatus();
 }
 
+/* v1.5.8 item 40 — status sesi yang TERGAMBAR saat ini.
+   undefined = chrome belum digambar; null = kerangka tamu; string = id user.
+   Dipakai supaya chrome HANYA digambar sekali per muat halaman dan
+   refreshChrome menjadi no-op bila statusnya tidak berubah. */
+var _chromeUserKey;
+
+/* Perbarui simpul akun SAJA di tempat (tanpa applyChrome): tombol avatar
+   header, kaki drawer, dan tautan akun drawer. Elemen header/drawer/footer
+   TIDAK diganti — jadi tidak ada kedip remount. */
+function updateChromeUser(active, user) {
+  var key = user && user.user ? String(user.user.id) : null;
+  if (key === _chromeUserKey) return;
+  _chromeUserKey = key;
+  var actions = document.querySelector('.header-actions');
+  if (actions) {
+    var oldBtn = actions.querySelector('.header-avatar, a.header-icon-btn[href="/account.html"]');
+    var tmp = document.createElement('div');
+    tmp.innerHTML = accountBtnHTML(user);
+    var newBtn = tmp.firstChild;
+    if (oldBtn && newBtn) actions.replaceChild(newBtn, oldBtn);
+  }
+  var footer = document.getElementById('drawer-footer');
+  if (footer) {
+    var tmpF = document.createElement('div');
+    tmpF.innerHTML = drawerFooterHTML(user);
+    var newFooter = tmpF.firstChild;
+    if (newFooter) footer.parentNode.replaceChild(newFooter, footer);
+  }
+  var link = document.getElementById('drawer-account-link');
+  if (link) {
+    var span = link.querySelector('span');
+    if (user) {
+      link.setAttribute('href', '/account.html');
+      if (span) span.textContent = 'Akun Saya';
+    } else {
+      link.setAttribute('href', '/account.html?mode=login');
+      if (span) span.textContent = 'Masuk / Daftar';
+    }
+  }
+  chromeClosePopover();
+  bindDrawerAccount();
+}
+
 function mountChrome(active) {
+  /* v1.5.8 item 40: kerangka digambar SEKALI secara sinkron (tanpa
+     menunggu /api/me) supaya header tidak telat muncul; sesudah sesi
+     diketahui, updateChromeUser hanya menukar simpul akun di tempat. */
+  if (!document.querySelector('header.site-header')) {
+    applyChrome(chromeHTML(active, null));
+    _chromeUserKey = null;
+  }
   return currentUser().then(function (user) {
-    applyChrome(chromeHTML(active, user));
+    updateChromeUser(active, user);
     return user;
   });
 }
@@ -421,9 +489,20 @@ function mountChrome(active) {
 /* F-01: gambar ulang chrome dari status sesi TERBARU tanpa reload
    halaman — dipanggil sesudah status autentikasi berubah (masuk /
    verifikasi berhasil / keluar) supaya drawer tidak basi dalam
-   keadaan tamu. `user` adalah badan /api/me (atau null = tamu). */
+   keadaan tamu. `user` adalah badan /api/me (atau null = tamu).
+   v1.5.8 item 40: NO-OP bila status yang digambar sudah sama — ini
+   yang membunuh remount ke-2 di /account.html (loadAccount memanggil
+   refreshChrome dengan sesi yang sama dengan yang baru dipasang
+   mountChrome). */
 function refreshChrome(active, user) {
-  applyChrome(chromeHTML(active, user || null));
+  var key = user && user.user ? String(user.user.id) : null;
+  if (key === _chromeUserKey && document.querySelector('header.site-header')) return;
+  if (!document.querySelector('header.site-header')) {
+    applyChrome(chromeHTML(active, user || null));
+    _chromeUserKey = key;
+    return;
+  }
+  updateChromeUser(active, user);
 }
 
 /* Keluar dari sidebar (v1.3.3): location.replace — halaman profil
@@ -473,18 +552,34 @@ function bindChromeDocumentListeners() {
   });
 }
 
+/* Ikat popover + tombol keluar di kaki drawer (v1.5.8 item 40): diekstrak
+   dari initChromeInteractions supaya bisa dipanggil ulang sesudah
+   updateChromeUser mengganti kaki drawer di tempat. */
+function bindDrawerAccount() {
+  var accountBtn = document.getElementById('drawer-account-btn');
+  var popover = document.getElementById('drawer-account-popover');
+  if (accountBtn && popover) {
+    accountBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (popover.hidden) {
+        popover.hidden = false;
+        accountBtn.setAttribute('aria-expanded', 'true');
+      } else chromeClosePopover();
+    });
+    popover.addEventListener('click', function (e) { e.stopPropagation(); });
+    bindChromeDocumentListeners();
+  }
+  var logoutBtn = document.getElementById('drawer-logout-btn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', function () { handleSidebarLogout(logoutBtn); });
+  }
+}
+
 function initChromeInteractions() {
   var btnOpen = document.getElementById('btn-drawer');
   var btnClose = document.getElementById('btn-drawer-close');
   var drawer = document.getElementById('drawer');
   var backdrop = document.getElementById('drawer-backdrop');
-  var accountBtn = document.getElementById('drawer-account-btn');
-  var popover = document.getElementById('drawer-account-popover');
-  function openPopover() {
-    if (!popover) return;
-    popover.hidden = false;
-    if (accountBtn) accountBtn.setAttribute('aria-expanded', 'true');
-  }
   function openDrawer() {
     if (!drawer) return;
     drawer.hidden = false;
@@ -509,18 +604,7 @@ function initChromeInteractions() {
   if (backdrop) backdrop.addEventListener('click', closeDrawer);
   if (drawer) drawer.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', closeDrawer); });
   /* Popover akun sidebar: ketuk avatar/email membuka-menutupnya. */
-  if (accountBtn && popover) {
-    accountBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (popover.hidden) openPopover(); else chromeClosePopover();
-    });
-    popover.addEventListener('click', function (e) { e.stopPropagation(); });
-    bindChromeDocumentListeners();
-  }
-  var logoutBtn = document.getElementById('drawer-logout-btn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', function () { handleSidebarLogout(logoutBtn); });
-  }
+  bindDrawerAccount();
   var btnSearch = document.getElementById('btn-header-search');
   if (btnSearch) btnSearch.addEventListener('click', function () { window.location.href = '/search.html'; });
 }

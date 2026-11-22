@@ -1,6 +1,6 @@
 {
   "dependencies": {},
-  "description": "Mitsunime — website streaming anime full-stack (Node.js + SQLite, Termux). Katalog Anikoto, player MegaPlay, pencarian dari database lokal, akun + premium manual yang diaktifkan admin.",
+  "description": "Mitsunime — website streaming anime full-stack (Node.js + SQLite, Termux). Katalog Anikoto, player MegaPlay, pencarian dari database lokal, akun + login Google.",
   "engines": {
     "node": ">=22.5"
   },
@@ -15,5 +15,5 @@
     "sync:full": "node scripts/sync-cron.js --full"
   },
   "type": "commonjs",
-  "version": "1.5.5"
+  "version": "1.5.11"
 }

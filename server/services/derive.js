@@ -2,7 +2,7 @@
 // Derivasi dari cache — Anikoto TIDAK punya endpoint trending/genre/
 // jadwal, jadi semua ini dihitung dari anime_cache.
 // Dipakai ulang dari proyek NontonAnime v1.1.3; yang berubah untuk Mitsunime:
-// - semua hasil membawa flag admin sub_indo dan premium_only (badge di UI);
+// - semua hasil membawa flag admin sub_indo (badge di UI);
 // - search() menerima filter genre, status, dan tahun (PRD task-05).
 // Label UI jujur: "trending" = urutan skor tertinggi ("Rating Tertinggi").
 // Semua query memakai parameter binding — tidak ada string SQL dari input
@@ -17,8 +17,8 @@ function pageOf(total, page, perPage) {
   return { page, per_page: perPage, total, total_pages: totalPages };
 }
 
-const COLS = 'payload, sub_indo, premium_only';
-const COLS_A = 'a.payload, a.sub_indo, a.premium_only';
+const COLS = 'payload, sub_indo';
+const COLS_A = 'a.payload, a.sub_indo';
 
 // Rating Tertinggi: skor menurun (judul tanpa skor di belakang).
 function trending(page = 1, perPage = 20) {
@@ -220,7 +220,7 @@ function search(query, opts = {}) {
     const match = terms.join(' ');
     try {
       rows = db.prepare(
-        `SELECT a.payload, a.sub_indo, a.premium_only FROM anime_cache a JOIN anime_fts f ON f.rowid = a.id
+        `SELECT a.payload, a.sub_indo FROM anime_cache a JOIN anime_fts f ON f.rowid = a.id
          WHERE anime_fts MATCH ?${extraWhere} ORDER BY ${SEARCH_TYPE_RANK}, ${SEARCH_DATE_KEY}, rank, ${SEARCH_TIEBREAK} LIMIT ? OFFSET ?`)
         .all(match, ...condParams, perPage, offset);
       total = db.prepare(
@@ -232,7 +232,7 @@ function search(query, opts = {}) {
     // Fallback LIKE: cocok untuk kata pendek / karakter khusus.
     const like = `%${q.replace(/[%_]/g, '')}%`;
     rows = db.prepare(
-      `SELECT a.payload, a.sub_indo, a.premium_only FROM anime_cache a
+      `SELECT a.payload, a.sub_indo FROM anime_cache a
        WHERE (a.title LIKE ? COLLATE NOCASE OR a.alternative LIKE ? COLLATE NOCASE)${extraWhere}
        ORDER BY ${SEARCH_ORDER} LIMIT ? OFFSET ?`).all(like, like, ...condParams, perPage, offset);
     total = db.prepare(

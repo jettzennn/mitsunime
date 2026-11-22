@@ -7,10 +7,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=1.5.5">
+  <link rel="stylesheet" href="/css/style.css?v=1.5.10">
   <link rel="manifest" href="/manifest.webmanifest">
   <meta name="theme-color" content="#0c0f14">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="icon" type="image/png" href="/icons/mitsunime-favicon-1024.png">
 </head>
 <body>
   <div id="site-header-slot"></div>
@@ -31,8 +32,13 @@
           <!-- Kontrol player custom v1.5.3 (item 13): menggantikan kontrol
                bawaan Chrome HANYA untuk Server HD. Bar + menu satu unit
                dengan satu timer auto-hide; menu ⋮ berisi tiga seksi
-               sejajar (Bahasa / Kecepatan / Subtitle). Bila init gagal,
-               watch.js mengembalikan atribut controls (kontrol natif). -->
+               (Bahasa / Kecepatan / Subtitle) — satu kolom di HP, tiga
+               kolom di desktop (item 43 v1.5.8). Item 47 v1.5.8: timer
+               DITANGGUHKAN selama menu terbuka; menu menutup hanya lewat
+               ketuk-di-luar / ⋮ / Escape / ganti server / keluar
+               fullscreen. Item 46 v1.5.8: menu bisa diseret lewat gagang
+               di atasnya. Bila init gagal, watch.js mengembalikan
+               atribut controls (kontrol natif). -->
           <div class="player__bar" id="player-bar" hidden>
             <button class="player-btn" id="player-play" type="button" aria-label="Putar">
               <svg class="player-ic player-ic--play" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13l11-6.5z"/></svg>
@@ -58,6 +64,13 @@
             </button>
           </div>
           <div class="player__menu" id="player-menu" hidden role="dialog" aria-label="Pengaturan pemutar">
+            <!-- Item 46 (v1.5.8, T2): gagang drag — seret menu lewat sini
+                 (pointer + sentuh); tombol panah keyboard menggeser 16 px. -->
+            <div class="player-menu__grip" id="player-menu-grip" tabindex="0" role="button" aria-label="Geser menu">
+              <span class="player-menu__grip-dots" aria-hidden="true">⋮⋮</span>
+              <span class="player-menu__grip-label">Geser</span>
+            </div>
+            <div class="player-menu__body">
             <div class="player-menu__col" id="menu-lang">
               <h3 class="player-menu__title">Bahasa</h3>
               <div class="player-menu__list" id="menu-lang-list"></div>
@@ -69,6 +82,7 @@
             <div class="player-menu__col" id="menu-sub">
               <h3 class="player-menu__title">Subtitle</h3>
               <div id="menu-sub-body"></div>
+            </div>
             </div>
           </div>
           <iframe id="player-iframe" title="Pemutar video" allow="autoplay; fullscreen; encrypted-media" allowfullscreen></iframe>
@@ -146,11 +160,11 @@
     </div>
   </main>
   <div id="site-footer-slot"></div>
-  <script src="/js/api.js?v=1.5.0"></script>
-  <script src="/js/common.js?v=1.5.4"></script>
+  <script src="/js/api.js?v=1.5.9"></script>
+  <script src="/js/common.js?v=1.5.9"></script>
   <script src="/js/storage.js?v=1.5.2"></script>
   <script src="/js/subs.js?v=1.5.4"></script>
   <script src="/js/subprefs.js?v=1.5.3"></script>
-  <script src="/js/watch.js?v=1.5.5"></script>
+  <script src="/js/watch.js?v=1.5.6"></script>
 </body>
 </html>

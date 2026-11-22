@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Daftar Anime — Mitsunime</title>
+  <meta name="description" content="Daftar anime Mitsunime: episode terbaru, rating tertinggi, dan sedang tayang.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Plus+Jakarta+Sans:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css?v=1.5.10">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="theme-color" content="#0c0f14">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="icon" type="image/png" href="/icons/mitsunime-favicon-1024.png">
+</head>
+<body>
+  <div id="site-header-slot"></div>
+  <main class="page-main">
+    <div class="shell">
+      <section class="section" aria-label="Daftar anime">
+        <div class="section__head">
+          <h1 class="section-title" id="list-title"><span class="accent-word">Daftar</span> Anime</h1>
+        </div>
+        <div class="poster-grid" id="list-grid"></div>
+        <div id="list-more-wrap" style="display:flex;justify-content:center;margin-top:24px" hidden>
+          <button class="btn btn-primary" id="btn-more" type="button">Muat lagi</button>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div id="site-footer-slot"></div>
+  <script src="/js/api.js?v=1.5.9"></script>
+  <script src="/js/common.js?v=1.5.9"></script>
+  <script src="/js/list.js?v=1.5.9"></script>
+  <script>mountChrome('home');</script>
+</body>
+</html>

@@ -1,15 +1,10 @@
 /* ============================================================
    account.js — Halaman akun Mitsunime (task-12)
    Bila belum login: form masuk/daftar. Bila sudah login: PROFIL
-   WEB saja (avatar + pensil, nama, level, premium), Daftar Saya,
+   WEB saja (avatar + pensil, nama, level), Daftar Saya,
    Riwayat Tontonan (klik kartu -> daftar episode yang ditonton).
    Urusan akun tidak ada di halaman ini — akun diurus dari
    container akun di kaki sidebar.
-   Aksesori TIDAK lagi tampil di halaman profil — semuanya pindah
-   ke panel pensil (Ubah Profil), per jenis masing-masing.
-   F-05: Pakai/Lepas aksesori hanya memperbarui baris yang diklik,
-   tanpa render ulang profil/aksesori dan tanpa skeleton.
-   F-04: pill lencana hanya satu label (aturan ::after dihapus).
    ============================================================ */
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -103,17 +98,8 @@ window.addEventListener('popstate', function () {
   revalidateSessionFresh();
 });
 
-var ACC_KIND_LABEL = {
-  border: 'Border',
-  background: 'Background',
-  frame: 'Bingkai Avatar',
-  badge: 'Lencana',
-  name_effect: 'Efek Nama',
-};
-
 /* Profil yang sedang tampil (dari /api/me) — dipakai panel pensil
-   supaya tidak perlu memuat ulang halaman setelah ubah
-   profil/pakai aksesori. */
+   supaya tidak perlu memuat ulang halaman setelah ubah profil. */
 var currentMe = null;
 
 /* Avatar preset (v1.3.2, sama seperti server/services/avatars.js):
@@ -141,20 +127,28 @@ function avatarStyle(user) {
   if (!p) return '';
   return 'background:' + p.bg + ';color:' + p.fg + ';border-color:' + p.ring;
 }
+/* Foto profil Google (v1.5.7, item 37): bila user.avatar_url terisi,
+   foto = foto Google (bukan huruf). Bila kosong → huruf awal seperti
+   biasa. Dipakai kartu profil + avatar header. */
+function avatarInnerHTML(user) {
+  if (user && user.avatar_url) {
+    return '<img src="' + esc(user.avatar_url) + '" alt="" referrerpolicy="no-referrer" loading="lazy">';
+  }
+  return esc((user.username || '?').charAt(0).toUpperCase());
+}
 /* Terapkan avatar preset ke avatar di kartu profil (+ avatar kecil di
    header situs bila ada) — hanya mengubah node itu, tanpa render ulang. */
 function applyAvatarToHeader(user) {
-  var letter = (user.username || '?').charAt(0).toUpperCase();
-  var style = avatarStyle(user);
+  var style = (user && user.avatar_url) ? '' : avatarStyle(user);
   var av = document.getElementById('profile-avatar');
   if (av) {
     av.style.cssText = style;
-    av.textContent = letter;
+    av.innerHTML = avatarInnerHTML(user);
   }
   var headerAv = document.querySelector('.header-avatar');
   if (headerAv) {
     headerAv.style.cssText = style;
-    headerAv.textContent = letter;
+    headerAv.innerHTML = avatarInnerHTML(user);
   }
 }
 
@@ -230,10 +224,73 @@ var startInResetLink = false;
 function initAuth(mode) {
   authMode = mode;
   renderAuthForm();
+  initGoogleButton();
   document.getElementById('form-login').addEventListener('submit', function (e) {
     e.preventDefault();
     submitAuth();
   });
+}
+
+/* Login Google (v1.5.8, item 41): kegagalan callback dialihkan ke
+   halaman ini dengan ?google_err=<kode> (bukan JSON mentah). Tampilkan
+   pesan Bahasa Indonesia di #auth-error. Kode + pesan sama dengan
+   GOOGLE_ERR_MESSAGES di server/routes/google.js — jangan ubah satu
+   sisi saja. Parameter dibersihkan dari URL sesudah ditampilkan
+   (seperti kode reset), supaya refresh tidak menampilkan ulang. */
+var GOOGLE_ERR_MESSAGES = {
+  login: 'Login Google gagal. Coba lagi.',
+  code: 'Kode login Google tidak berlaku.',
+  network: 'Gagal menghubungi Google.',
+  admin: 'Akun ini tidak bisa masuk lewat Google.',
+  rate: 'Terlalu banyak percobaan login. Coba lagi 15 menit lagi.',
+  config: 'Login Google belum dikonfigurasi.'
+};
+function showGoogleError() {
+  var params;
+  try { params = new URLSearchParams(window.location.search); } catch (e) { return; }
+  var code = params.get('google_err');
+  if (!code) return;
+  var errEl = document.getElementById('auth-error');
+  if (errEl) errEl.textContent = GOOGLE_ERR_MESSAGES[code] || GOOGLE_ERR_MESSAGES.login;
+  params.delete('google_err');
+  var next = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+  try { window.history.replaceState(null, '', next); } catch (e) { /* abaikan */ }
+}
+
+/* Login Google (v1.5.7, item 37): tampilkan tombol Google bila server
+   mengonfigurasi Google; bila tidak (atau pengecekan gagal), tombol
+   tetap tersembunyi — jangan mengarah ke endpoint yang mati. */
+var googleButtonChecked = false;
+function initGoogleButton() {
+  if (googleButtonChecked) return;
+  googleButtonChecked = true;
+  var btn = document.getElementById('btn-google');
+  if (!btn) return;
+  /* v1.5.10, item 54 (A1): di tab Chrome, login Google dibuka lewat
+     window.open (tab Chrome baru) supaya navigasi kembali dari Google
+     tidak di-route Android ke PWA ter-install. Di dalam PWA
+     (display-mode standalone) biarkan tautan biasa — itu alur yang
+     sudah berhasil (Custom Tab → kembali sekali ke PWA). Bila popup
+     diblokir, jatuh kembali ke navigasi biasa di tab asal. */
+  btn.addEventListener('click', function (e) {
+    if (isStandalonePWA()) return; /* PWA: tautan biasa, jangan diubah */
+    var w = null;
+    try { w = window.open('/api/auth/google', '_blank'); } catch (err) { w = null; }
+    if (w) e.preventDefault(); /* popup terbuka: tab asal diam */
+    /* bila w null (popup diblokir): biarkan tautan biasa jalan */
+  });
+  apiGoogleConfig().then(function (res) {
+    if (res && res.configured) btn.hidden = false;
+  }).catch(function () { /* tetap tersembunyi */ });
+}
+
+/* v1.5.10, item 54: true bila halaman ini berjalan di dalam PWA
+   ter-install (standalone), bukan di tab browser biasa. */
+function isStandalonePWA() {
+  try {
+    if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true;
+  } catch (e) { /* abaikan */ }
+  return !!(window.navigator && window.navigator.standalone === true);
 }
 
 function renderAuthForm() {
@@ -869,6 +926,11 @@ async function loadAccount(force) {
         }
       } else {
         renderAuthForm();
+        /* Item 41: pesan google_err ditampilkan DI SINI (sesudah
+           renderAuthForm yang mengosongkan #auth-error) — bukan di
+           initAuth, karena loadAccount berjalan async sesudahnya dan
+           akan menghapus pesan yang dipasang lebih awal. */
+        showGoogleError();
       }
       return;
     }
@@ -887,106 +949,125 @@ async function loadAccount(force) {
     authRoot.hidden = false;
     accRoot.hidden = true;
     renderAuthForm();
+    showGoogleError();
   }
 }
 
-function equippedClass(equipped, kind) {
-  if (!equipped || !equipped[kind]) return '';
-  var asset = equipped[kind].asset;
-  return asset ? esc(asset) : '';
-}
-
-/* Level + EXP (v1.3.1): chip level + bar progres ke level berikut.
-   Admin selalu level 1000 (di atas cap pengguna 100) dan tampil
-   dengan chip emas ADMIN, bukan chip level biasa dan tanpa bar. */
+/* Level + EXP (v1.3.1, struktur kartu nama v1.5.10 item 55):
+   mengembalikan BARIS-BARIS <dl> kartu profil (bukan kartu utuh).
+   Pengguna biasa: baris Level (chip) + baris EXP + baris progres.
+   Admin: hanya baris Level berisi MAX emas — tanpa baris EXP dan
+   tanpa bar progres (level admin di atas cap 100). Pill ADMIN
+   tidak di sini (revisi 2026-11-22: pill pindah ke sebelah nama). */
 function levelHTML(level, user) {
   if (!level) return '';
   var isAdmin = user && user.role === 'admin';
   if (isAdmin) {
-    return '<div class="level-row"><span class="chip-status chip-status--admin">Admin · Level 1000</span>' +
-      '<span class="level-exp">Level admin — di atas level maks pengguna (100).</span></div>';
+    return '<div class="profile-row"><dt>Level</dt><dd><span class="profile-level-max">MAX</span></dd></div>';
   }
   var pct = Math.max(0, Math.min(100, Math.round((level.progress || 0) * 100)));
   var expText = level.level >= 100
     ? 'Level maks tercapai · ' + esc(level.exp_total) + ' EXP'
     : esc(level.exp_total) + ' EXP · ' + esc(level.exp_for_next) + ' EXP lagi ke level ' + esc(level.level + 1);
-  return '<div class="level-row"><span class="chip-status chip-status--level">Level ' + esc(level.level) + '</span>' +
-    '<span class="level-exp">' + expText + '</span></div>' +
-    '<div class="level-progress" title="Progres ke level ' + esc(level.level + 1) + '"><i style="width:' + pct + '%"></i></div>';
+  return '<div class="profile-row"><dt>Level</dt><dd><span class="chip-status chip-status--level">Level ' + esc(level.level) + '</span></dd></div>' +
+    '<div class="profile-row"><dt>EXP</dt><dd class="profile-row__exp">' + expText + '</dd></div>' +
+    '<div class="profile-row profile-row__progress"><div class="level-progress" title="Progres ke level ' + esc(level.level + 1) + '"><i style="width:' + pct + '%"></i></div></div>';
 }
 
-/* Terapkan aksesori terpasang ke kartu profil yang sudah tampil —
-   hanya class + chip yang disentuh (F-05: tanpa renderProfile penuh).
-   Dipakai setelah Pakai/Lepas dari panel pensil. */
-function applyEquippedToHeader(me) {
-  if (!me) return;
-  var equipped = me.equipped || {};
-  var card = document.getElementById('profile-card');
-  if (card) {
-    card.className = 'profile-card' +
-      (equippedClass(equipped, 'border') ? ' ' + equippedClass(equipped, 'border') : '') +
-      (equippedClass(equipped, 'background') ? ' ' + equippedClass(equipped, 'background') : '');
-  }
-  var av = document.getElementById('profile-avatar');
-  if (av) {
-    av.className = 'profile-avatar' +
-      (equippedClass(equipped, 'frame') ? ' ' + equippedClass(equipped, 'frame') : '');
-  }
-  var nameEl = document.getElementById('profile-name');
-  if (nameEl) {
-    nameEl.className = 'profile-name' +
-      (equippedClass(equipped, 'name_effect') ? ' ' + equippedClass(equipped, 'name_effect') : '');
-  }
-  var badgeRow = document.getElementById('profile-badge-row');
-  if (badgeRow) {
-    /* F-04: satu chip, satu label — nama lencana saja. */
-    badgeRow.innerHTML = equipped.badge
-      ? '<span class="chip-status chip-status--premium">' + esc(equipped.badge.name) + '</span>'
-      : '';
-  }
+/* Flip kartu ADMIN (v1.5.10 item 55, F1–F5): klik kartu admin membalik
+   ke sisi belakang (logo Mitsunime + band white-off + ornamen GFX),
+   klik lagi kembali. Hanya admin; kartu biasa tanpa wrapper/handler. */
+function toggleProfileFlip(wrapper) {
+  var flipped = wrapper.classList.toggle('is-flipped');
+  setFlipFace(wrapper, '.profile-card__face--front', flipped);
+  setFlipFace(wrapper, '.profile-card__face--back', !flipped);
+}
+function setFlipFace(wrapper, sel, hidden) {
+  var face = wrapper.querySelector(sel);
+  if (!face) return;
+  if (hidden) { face.setAttribute('aria-hidden', 'true'); face.setAttribute('inert', ''); }
+  else { face.removeAttribute('aria-hidden'); face.removeAttribute('inert'); }
+}
+function initProfileFlip(wrapper) {
+  wrapper.addEventListener('click', function (e) {
+    /* Pengecualian wajib: klik elemen interaktif (pensil dsb.)
+       TIDAK membalik — pengaman pertama; stopPropagation di
+       tombol pensil adalah pengaman kedua. */
+    if (e.target.closest('button, a, input, select, textarea')) return;
+    toggleProfileFlip(wrapper);
+  });
+  wrapper.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      /* Pengaman yang SAMA dengan handler click: tombol di dalam kartu
+         (pensil dsb.) tetap teraktivasi normal, jangan membalik. */
+      if (e.target.closest('button, a, input, select, textarea')) return;
+      e.preventDefault(); toggleProfileFlip(wrapper);
+    }
+  });
 }
 
 function renderProfile(me) {
   var user = me.user;
-  var premium = me.premium || { is_premium: 0, premium_until: null, days_left: 0 };
-  var equipped = me.equipped || {};
-  var isPremium = premium.is_premium === 1;
-  var nameCls = equippedClass(equipped, 'name_effect');
-  var frameCls = equippedClass(equipped, 'frame');
-  var borderCls = equippedClass(equipped, 'border');
-  var bgCls = equippedClass(equipped, 'background');
-  var badge = equipped.badge || null;
-  var until = premium.premium_until ? fmtDate(premium.premium_until) : '';
-  var daysLeft = premium.days_left || 0;
-  var totalDays = 30;
-  var pct = isPremium ? Math.max(4, Math.min(100, Math.round((daysLeft / totalDays) * 100))) : 0;
-  document.getElementById('profile-section').innerHTML =
-    '<div class="profile-card ' + borderCls + ' ' + bgCls + '" id="profile-card">' +
-      '<div class="profile-avatar-wrap">' +
-        '<div class="profile-avatar ' + frameCls + '" id="profile-avatar" style="' + avatarStyle(user) + '">' + esc((user.username || '?').charAt(0).toUpperCase()) + '</div>' +
-        '<button class="avatar-edit-btn" id="btn-edit-profile" type="button" aria-label="Ubah profil">' + icon('pencil') + '</button>' +
+  var isAdmin = user && user.role === 'admin';
+  /* id="profile-card": di wrapper untuk admin, di kartu itu sendiri
+     untuk biasa (struktur biasa sama persis seperti semula). */
+  var frontOpen = isAdmin
+    ? '<div class="profile-card profile-card--admin profile-card__face profile-card__face--front">'
+    : '<div class="profile-card" id="profile-card">';
+  var frontHTML =
+    frontOpen +
+      '<div class="profile-card__head">' +
+        '<div class="profile-avatar-wrap">' +
+          '<div class="profile-avatar" id="profile-avatar" style="' + (user.avatar_url ? '' : avatarStyle(user)) + '">' + avatarInnerHTML(user) + '</div>' +
+          '<button class="avatar-edit-btn" id="btn-edit-profile" type="button" aria-label="Ubah profil">' + icon('pencil') + '</button>' +
+        '</div>' +
+        '<div class="profile-card__identity">' +
+          (isAdmin
+            ? '<div class="profile-name-row"><h2 class="profile-name" id="profile-name">' + esc(user.username) + '</h2><span class="profile-admin-tag">ADMIN</span></div>'
+            : '<h2 class="profile-name" id="profile-name">' + esc(user.username) + '</h2>') +
+          (user.email ? '<p class="profile-email">' + esc(user.email) + '</p>' : '') +
+        '</div>' +
       '</div>' +
-      '<div style="flex:1;min-width:200px">' +
-        '<h2 class="profile-name ' + nameCls + '" id="profile-name">' + esc(user.username) + '</h2>' +
-        (user.email ? '<p class="profile-email">' + esc(user.email) + '</p>' : '') +
-        '<div class="profile-status">' +
-          (isPremium
-            ? '<span class="chip-status chip-status--premium">PREMIUM</span>'
-            : '<span class="chip-status chip-status--gratis">GRATIS</span>') +
-          (isPremium
-            ? '<span class="profile-until">Aktif sampai ' + esc(until) + ' (' + daysLeft + ' hari lagi)</span>'
-            : '<a class="btn btn-primary btn-sm" href="/premium.html">Naik ke Premium</a>') +
-        '</div>' +
-        '<div class="profile-badge-row" id="profile-badge-row">' +
-          (badge ? '<span class="chip-status chip-status--premium">' + esc(badge.name) + '</span>' : '') +
-        '</div>' +
-        (isPremium ? '<div class="premium-progress" title="Sisa masa premium"><i style="width:' + pct + '%"></i></div>' : '') +
+      '<hr class="profile-card__divider">' +
+      '<dl class="profile-rows">' +
         levelHTML(me.level, user) +
-        '<p class="muted small" style="margin:8px 0 0">Bergabung ' + esc(fmtDate(user.created_at)) + (user.last_login_at ? ' · Terakhir masuk ' + esc(fmtDateTime(user.last_login_at)) : '') + '</p>' +
-      '</div>' +
+        '<div class="profile-row"><dt>Bergabung</dt><dd>' + esc(fmtDate(user.created_at)) + '</dd></div>' +
+        (user.last_login_at ? '<div class="profile-row"><dt>Terakhir masuk</dt><dd>' + esc(fmtDateTime(user.last_login_at)) + '</dd></div>' : '') +
+      '</dl>' +
+      (isAdmin ? '<div class="profile-card__gfx" aria-hidden="true"><span class="profile-card__barcode"></span><span class="profile-card__dots"></span></div>' : '') +
+      (isAdmin ? '<span class="profile-card__ghost" aria-hidden="true">ADMIN</span>' : '') +
+      (isAdmin ? '<p class="profile-card__flip-hint" aria-hidden="true">Ketuk untuk membalik</p>' : '') +
     '</div>';
+  /* Kartu ADMIN dibungkus .profile-flip; id="profile-card" pindah ke
+     wrapper (tidak ada JS lain yang mengasumsikan #profile-card
+     adalah elemen .profile-card itu sendiri — CSS memakai class).
+     Sisi belakang memakai .profile-card--admin juga supaya border
+     lime + kurung sudut + diagonal diwarisi; ghost TIDAK ada di
+     belakang. Kartu biasa strukturnya sama persis seperti semula. */
+  var backHTML = isAdmin
+    ? '<div class="profile-card profile-card--admin profile-card__face profile-card__face--back" aria-hidden="true" inert>' +
+      '<div class="profile-card__back-body">' +
+        '<img class="profile-card__back-logo" src="/icons/icon-192.png" alt="" width="88" height="88">' +
+        '<div class="profile-card__back-band"><span class="profile-card__back-wordmark">MITSUNIME</span></div>' +
+        '<p class="profile-card__back-tagline">Streaming anime berbahasa Indonesia</p>' +
+      '</div>' +
+      '<div class="profile-card__gfx" aria-hidden="true"><span class="profile-card__barcode"></span><span class="profile-card__dots"></span></div>' +
+      '<p class="profile-card__flip-hint" aria-hidden="true">Ketuk untuk kembali</p>' +
+    '</div>'
+    : '';
+  document.getElementById('profile-section').innerHTML = isAdmin
+    ? '<div class="profile-flip" id="profile-card" tabindex="0" role="button" aria-label="Balik kartu profil"><div class="profile-flip__inner">' + frontHTML + backHTML + '</div></div>'
+    : frontHTML;
   var editBtn = document.getElementById('btn-edit-profile');
-  if (editBtn) editBtn.addEventListener('click', openEditProfilePanel);
+  if (editBtn) editBtn.addEventListener('click', function (e) {
+    /* Pengaman kedua: pensil tidak memicu flip kartu admin. */
+    e.stopPropagation();
+    openEditProfilePanel();
+  });
+  if (isAdmin) {
+    var flip = document.getElementById('profile-card');
+    if (flip) initProfileFlip(flip);
+  }
 }
 
 /* ---------- Daftar Saya ---------- */
@@ -1088,15 +1169,8 @@ async function openHistoryModal(card) {
 }
 
 /* ---------- Panel pensil: Ubah Profil (v1.3.2) ----------
-   Foto profil (8 preset avatar + default), ganti nama, dan form
-   aksesori per jenis — masing-masing bagiannya sendiri. Panel dibuka
-   dari ikon pensil di sudut avatar. Aksesori yang ditampilkan HANYA
-   yang sudah dimiliki; yang premium terkunci bila Premium tidak
-   aktif. F-05: Pakai/Lepas hanya memperbarui baris yang diklik +
-   tampilan terpasang di header — tanpa renderProfile()/muat ulang
-   penuh dan tanpa skeleton. */
-var panelAccData = null;
-
+   Foto profil (8 preset avatar + default) dan ganti nama. Panel
+   dibuka dari ikon pensil di sudut avatar. */
 function openEditProfilePanel() {
   if (!currentMe) return;
   var user = currentMe.user;
@@ -1111,38 +1185,35 @@ function openEditProfilePanel() {
   avatarButtons += '<button type="button" class="avatar-option' + (defaultSelected ? ' is-selected' : '') + '" data-avatar="" aria-pressed="' + (defaultSelected ? 'true' : 'false') + '" aria-label="Avatar default">' +
     '<span class="avatar-option__circle">' + letter + '</span>' +
     '<span class="avatar-option__name">Default</span></button>';
+  /* Foto profil Google (v1.5.7, item 37, D16): bila pengguna punya
+     foto Google (avatar_url terisi), pemilih preset DISEMBUNYIKAN —
+     fotonya mengikuti Google dan tidak bisa ditimpa preset. Ganti
+     nama tetap bisa (seksi Nama di bawah tetap tampil). */
+  var avatarSection = user.avatar_url
+    ? '<div class="edit-panel__section"><h3>Foto Profil</h3>' +
+      '<p class="edit-panel__hint">Foto profil mengikuti akun Google kamu.</p></div>'
+    : '<div class="edit-panel__section"><h3>Foto Profil</h3>' +
+      '<p class="edit-panel__hint">Pilih salah satu — langsung tersimpan.</p>' +
+      '<div class="avatar-grid" id="edit-avatar-grid">' + avatarButtons + '</div></div>';
   var back = openModal(
     '<button class="modal__close" type="button" aria-label="Tutup">×</button>' +
     '<h2>Ubah Profil</h2>' +
-    '<p class="edit-panel__hint">Foto, nama, dan aksesori profil kamu.</p>' +
-    '<div class="edit-panel__section"><h3>Foto Profil</h3>' +
-    '<p class="edit-panel__hint">Pilih salah satu — langsung tersimpan.</p>' +
-    '<div class="avatar-grid" id="edit-avatar-grid">' + avatarButtons + '</div></div>' +
+    '<p class="edit-panel__hint">Foto dan nama profil kamu.</p>' +
+    avatarSection +
     '<div class="edit-panel__section"><h3>Nama</h3>' +
     '<div class="field"><label for="edit-username">Username</label>' +
     '<input id="edit-username" type="text" value="' + esc(user.username) + '" autocomplete="username" maxlength="32">' +
     '<p class="form-error" id="edit-username-error" role="alert"></p></div>' +
     '<button class="btn btn-primary" type="button" id="btn-save-username">Simpan Nama</button></div>' +
-    '<div class="edit-panel__section"><h3>Aksesori</h3>' +
-    '<p class="edit-panel__hint">Hanya aksesori yang sudah kamu miliki yang bisa dipakai. Aksesori premium terkunci bila Premium tidak aktif.</p>' +
-    '<div id="edit-acc-groups"></div></div>' +
     '<p class="form-error" id="edit-panel-error" role="alert"></p>'
   );
   var grid = back.querySelector('#edit-avatar-grid');
-  grid.addEventListener('click', function (e) {
+  if (grid) grid.addEventListener('click', function (e) {
     var btn = e.target.closest('.avatar-option');
     if (!btn) return;
     selectEditAvatar(btn.getAttribute('data-avatar') || null);
   });
   back.querySelector('#btn-save-username').addEventListener('click', saveEditUsername);
-  var accBox = back.querySelector('#edit-acc-groups');
-  accBox.addEventListener('click', function (e) {
-    var eqBtn = e.target.closest('[data-equip]');
-    if (eqBtn) { panelEquip(eqBtn); return; }
-    var unBtn = e.target.closest('[data-unequip]');
-    if (unBtn) panelUnequip(unBtn);
-  });
-  loadPanelAccessories();
 }
 
 async function selectEditAvatar(code) {
@@ -1201,147 +1272,5 @@ async function saveEditUsername() {
     errEl.textContent = (err && err.message) || 'Gagal mengubah nama.';
   } finally {
     if (btn) btn.disabled = false;
-  }
-}
-
-async function loadPanelAccessories() {
-  var box = document.getElementById('edit-acc-groups');
-  if (!box) return;
-  if (panelAccData) { renderPanelAccessories(panelAccData); return; }
-  box.innerHTML = '<div class="skeleton" style="height:120px"></div>';
-  try {
-    var res = await apiAccessories();
-    panelAccData = res;
-    renderPanelAccessories(res);
-  } catch (err) {
-    box.innerHTML = stateHTML('error', 'Aksesori gagal dimuat', (err && err.message) || 'Terjadi kesalahan.');
-  }
-}
-
-function renderPanelAccessories(res) {
-  var box = document.getElementById('edit-acc-groups');
-  if (!box) return;
-  var catalog = res.data || [];
-  var owned = res.owned || [];
-  var equipped = res.equipped || {};
-  var isPremium = currentMe && currentMe.premium && currentMe.premium.is_premium === 1;
-  var ownedIds = {};
-  owned.forEach(function (o) { ownedIds[o.id] = true; });
-  var kinds = ['border', 'background', 'frame', 'badge', 'name_effect'];
-  box.innerHTML = kinds.map(function (kind) {
-    var items = catalog.filter(function (a) { return a.kind === kind && ownedIds[a.id]; });
-    var head = '<h3 style="margin:20px 0 0;font-size:15px">' + esc(ACC_KIND_LABEL[kind] || kind) + '</h3>';
-    if (!items.length) {
-      return head + '<p class="edit-panel__hint" style="margin-top:8px">Belum ada — dapatkan dari <a href="/premium.html">paket Premium</a>.</p>';
-    }
-    return head + items.map(function (a) { return accRowHTML(a, kind, equipped, isPremium); }).join('');
-  }).join('');
-}
-
-/* Pratinjau kecil di baris opsi: bentuknya saja (huruf/bintang/
-   contoh efek), bukan nama — nama sudah tertulis di badan baris,
-   supaya tidak ganda. */
-function accPreviewHTML(a, kind) {
-  if (kind === 'frame') {
-    return '<div class="acc-row__preview"><span class="profile-avatar ' + esc(a.asset || '') + '" style="width:40px;height:40px;font-size:16px">A</span></div>';
-  }
-  if (kind === 'badge') {
-    return '<div class="acc-row__preview"><span style="font-size:22px;color:var(--lime)">★</span></div>';
-  }
-  if (kind === 'name_effect') {
-    return '<div class="acc-row__preview"><span class="' + esc(a.asset || '') + '" style="font-size:18px">Aa</span></div>';
-  }
-  return '<div class="acc-row__preview ' + esc(a.asset || '') + '"></div>';
-}
-
-function accRowHTML(a, kind, equipped, isPremium) {
-  var isEq = equipped[kind] && equipped[kind].id === a.id;
-  var locked = a.premium_only && !isPremium;
-  var btn = '';
-  if (locked) {
-    btn = '<button class="btn btn-ghost btn-sm" type="button" disabled>Premium</button>';
-  } else if (isEq) {
-    btn = '<button class="btn btn-ghost btn-sm" type="button" data-unequip="' + esc(kind) + '">Lepas</button>';
-  } else {
-    btn = '<button class="btn btn-primary btn-sm" type="button" data-equip="' + esc(a.id) + '">Pakai</button>';
-  }
-  return '<div class="acc-row' + (isEq ? ' is-equipped' : '') + '" data-acc-row="' + esc(a.id) + '" data-kind="' + esc(kind) + '">' +
-    accPreviewHTML(a, kind) +
-    '<div class="acc-row__body"><p class="acc-row__name">' + esc(a.name) + '</p>' +
-    (locked ? '<p class="acc-row__note">Hanya untuk Premium aktif.</p>' : '') +
-    '</div>' + btn + '</div>';
-}
-
-/* F-05: Pakai/Lepas hanya memperbarui baris yang diklik (+ baris
-   sejenis yang tadinya terpasang) dan tampilan terpasang di header.
-   Tidak ada renderProfile(), tidak ada muat ulang daftar, tidak ada
-   skeleton — jadi tidak ada kedip. */
-async function panelEquip(btn) {
-  var id = parseInt(btn.getAttribute('data-equip'), 10);
-  var row = btn.closest('.acc-row');
-  var kind = row ? row.getAttribute('data-kind') : '';
-  btn.disabled = true;
-  try {
-    var out = await apiEquipAccessory(id);
-    if (out && out.equipped) {
-      panelAccData.equipped = out.equipped;
-      if (currentMe) currentMe.equipped = out.equipped;
-      clearMeCache();
-      applyEquippedToHeader(currentMe);
-      var box = document.getElementById('edit-acc-groups');
-      if (box) {
-        box.querySelectorAll('.acc-row[data-kind="' + kind + '"]').forEach(function (r) {
-          var b = r.querySelector('[data-equip],[data-unequip]');
-          if (!b) return;
-          var rowId = parseInt(r.getAttribute('data-acc-row'), 10);
-          if (rowId === id) {
-            r.classList.add('is-equipped');
-            b.textContent = 'Lepas';
-            b.className = 'btn btn-ghost btn-sm';
-            b.setAttribute('data-unequip', kind);
-            b.removeAttribute('data-equip');
-          } else if (b.hasAttribute('data-unequip')) {
-            r.classList.remove('is-equipped');
-            b.textContent = 'Pakai';
-            b.className = 'btn btn-primary btn-sm';
-            b.setAttribute('data-equip', String(rowId));
-            b.removeAttribute('data-unequip');
-          }
-          b.disabled = false;
-        });
-      }
-    }
-    showToast((out && out.message) || 'Aksesori dipakai.');
-  } catch (err) {
-    showToast((err && err.message) || 'Gagal memakai aksesori.', 'error');
-    btn.disabled = false;
-  }
-}
-
-async function panelUnequip(btn) {
-  var kind = btn.getAttribute('data-unequip');
-  var row = btn.closest('.acc-row');
-  btn.disabled = true;
-  try {
-    var out = await apiUnequipAccessory(kind);
-    if (out && out.equipped) {
-      panelAccData.equipped = out.equipped;
-      if (currentMe) currentMe.equipped = out.equipped;
-      clearMeCache();
-      applyEquippedToHeader(currentMe);
-      if (row) {
-        var rowId = parseInt(row.getAttribute('data-acc-row'), 10);
-        row.classList.remove('is-equipped');
-        btn.textContent = 'Pakai';
-        btn.className = 'btn btn-primary btn-sm';
-        btn.setAttribute('data-equip', String(rowId));
-        btn.removeAttribute('data-unequip');
-      }
-    }
-    showToast('Aksesori dilepas.');
-  } catch (err) {
-    showToast((err && err.message) || 'Gagal melepas aksesori.', 'error');
-  } finally {
-    btn.disabled = false;
   }
 }

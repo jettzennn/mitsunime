@@ -48,7 +48,7 @@ function pruneFailMap() {
 // --- Rate limit umum (perbaiki M3) ---
 // Pembatas per kunci + jendela, pola sama dengan batas login: Map
 // in-memory per proses. Dipakai endpoint tulis (register, transaksi,
-// confirm, favorit, progres, aksesori, aksi admin) dan endpoint baca
+// confirm, favorit, progres, aksi admin) dan endpoint baca
 // yang memicu panggilan ke Anikoto (cache-miss /api/series + stream).
 // Kunci membedakan pemanggil (IP untuk tamu, id pengguna untuk yang
 // sudah login) supaya satu penyerang tidak memblokir semua orang.

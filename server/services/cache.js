@@ -1,9 +1,9 @@
 'use strict';
 // Cache SQLite: baca/tulis anime_cache, series_cache, crawl_state.
 // Dipakai ulang dari proyek NontonAnime v1.1.3; yang berubah untuk Mitsunime:
-// - upsert TIDAK menyentuh kolom sub_indo / premium_only, supaya flag yang
+// - upsert TIDAK menyentuh kolom sub_indo, supaya flag yang
 //   sudah diisi admin tidak hilang saat sync ulang (flag hanya diubah admin).
-// - hasil baca membawa flag sub_indo dan premium_only (untuk badge di UI).
+// - hasil baca membawa flag sub_indo (untuk badge di UI).
 // Semua query memakai parameter binding — tidak ada string SQL dari input
 // pengguna (pencegahan injeksi, OWASP).
 // TTL: recent 15 mnt, series 1 jam. Data basi tetap disajikan dengan
@@ -39,7 +39,7 @@ function studiosOf(item) {
 // Simpan SATU baris anime (payload mentah dipertahankan apa adanya,
 // jadi `score` tetap string "8.18" seperti dari Anikoto — frontend
 // mem-parse float sendiri; kolom score REAL hanya untuk pengurutan).
-// PENTING: kolom sub_indo / premium_only TIDAK ada di daftar upsert,
+// PENTING: kolom sub_indo TIDAK ada di daftar upsert,
 // jadi flag admin bertahan apa adanya saat sync ulang.
 function upsertAnime(item) {
   const db = dbModule.get();
@@ -111,7 +111,6 @@ function rowToAnime(row) {
   try {
     const item = JSON.parse(row.payload);
     if (row.sub_indo !== undefined) item.sub_indo = row.sub_indo ? 1 : 0;
-    if (row.premium_only !== undefined) item.premium_only = row.premium_only ? 1 : 0;
     // M2: mal_id/ani_id TIDAK PERNAH keluar ke payload publik — keduanya
     // adalah bahan pembangun URL fallback MegaPlay. URL tontonan hanya
     // diberikan lewat endpoint stream yang butuh login (routes/public.js).
@@ -126,17 +125,15 @@ function rowToAnime(row) {
 // Flag admin untuk satu judul (dipakai route/gating tanpa parse payload).
 function getAnimeFlags(id) {
   const row = dbModule.get().prepare(
-    'SELECT sub_indo, premium_only FROM anime_cache WHERE id = ?',
+    'SELECT sub_indo FROM anime_cache WHERE id = ?',
   ).get(toInt(id));
-  return row ? { sub_indo: row.sub_indo ? 1 : 0, premium_only: row.premium_only ? 1 : 0 } : null;
+  return row ? { sub_indo: row.sub_indo ? 1 : 0 } : null;
 }
 
 // Ubah flag admin untuk satu judul. Hanya field yang diberikan yang diubah.
-// CATATAN v1: premium_only disimpan sebagai DATA saja — tidak mengunci
-// apa pun (keputusan pengguna 2026-11-15 ~06:55 WIB, tidak ada kunci
-// konten). sub_indo = 1 berarti admin sudah memverifikasi Sub Indo.
+// sub_indo = 1 berarti admin sudah memverifikasi Sub Indo.
 // Mengembalikan flag terbaru, atau null bila id tidak ada di katalog.
-function setAnimeFlags(id, { sub_indo, premium_only } = {}) {
+function setAnimeFlags(id, { sub_indo } = {}) {
   const db = dbModule.get();
   const row = db.prepare('SELECT id FROM anime_cache WHERE id = ?').get(toInt(id));
   if (!row) return null;
@@ -146,9 +143,6 @@ function setAnimeFlags(id, { sub_indo, premium_only } = {}) {
     sets.push('sub_indo = ?'); params.push(sub_indo ? 1 : 0);
     if (sub_indo) { sets.push('sub_indo_verified_at = ?'); params.push(nowSec()); }
     else { sets.push('sub_indo_verified_at = NULL'); }
-  }
-  if (premium_only !== undefined) {
-    sets.push('premium_only = ?'); params.push(premium_only ? 1 : 0);
   }
   if (!sets.length) return getAnimeFlags(id);
   params.push(toInt(id));
@@ -160,7 +154,7 @@ function listRecent(page, perPage) {
   const db = dbModule.get();
   const offset = (page - 1) * perPage;
   const rows = db.prepare(
-    'SELECT payload, fetched_at, sub_indo, premium_only FROM anime_cache ORDER BY updated_at DESC, fetched_at DESC LIMIT ? OFFSET ?',
+    'SELECT payload, fetched_at, sub_indo FROM anime_cache ORDER BY updated_at DESC, fetched_at DESC LIMIT ? OFFSET ?',
   ).all(perPage, offset);
   const total = db.prepare('SELECT COUNT(*) AS c FROM anime_cache').get().c;
   return { items: rows.map(rowToAnime).filter(Boolean), total, freshest: rows[0] ? rows[0].fetched_at : 0 };
@@ -168,7 +162,7 @@ function listRecent(page, perPage) {
 
 function getAnimeById(id) {
   const row = dbModule.get().prepare(
-    'SELECT payload, fetched_at, sub_indo, premium_only FROM anime_cache WHERE id = ?',
+    'SELECT payload, fetched_at, sub_indo FROM anime_cache WHERE id = ?',
   ).get(id);
   return row ? { item: rowToAnime(row), fetchedAt: row.fetched_at } : null;
 }

@@ -5,8 +5,6 @@
 // ("Username atau password salah") — jangan bocorkan mana yang salah.
 const auth = require('../services/auth');
 const mw = require('../middleware/auth');
-const premium = require('../services/premium');
-const accessories = require('../services/accessories');
 const emailCheck = require('../services/emailCheck');
 const emailVerification = require('../services/emailVerification');
 const levels = require('../services/levels');
@@ -146,7 +144,6 @@ async function handleRegister(req, res) {
     const pub = auth.publicUser(user);
     return send(res, 201, {
       ok: true, user: pub,
-      premium: premium.premiumInfo(pub),
       verification_required: true,
       verification_email_sent: sent.sent,
       message: sent.sent
@@ -160,7 +157,6 @@ async function handleRegister(req, res) {
   const pub = auth.publicUser(user);
   return send(res, 201, {
     ok: true, user: pub,
-    premium: premium.premiumInfo(pub),
     message: `Selamat datang, ${username}!`,
   });
 }
@@ -232,7 +228,6 @@ function handleLogin(req, res) {
   const pub = auth.publicUser(user);
   return send(res, 200, {
     ok: true, user: pub,
-    premium: premium.premiumInfo(pub),
     message: `Selamat datang kembali, ${user.username}!`,
   });
 }
@@ -275,7 +270,6 @@ async function handleVerifyConfirm(req, res) {
   const pub = auth.publicUser(user);
   return send(res, 200, {
     ok: true, user: pub,
-    premium: premium.premiumInfo(pub),
     verification_required: false,
     message: 'Email terverifikasi. Silakan masuk.',
   });
@@ -747,8 +741,6 @@ function handleMe(req, res) {
   return send(res, 200, {
     ok: true,
     user: pub,
-    premium: premium.premiumInfo(pub),
-    equipped: accessories.getEquipped(pub.id),
     // Level + EXP (v1.3.1): admin selalu level 1000.
     level: levels.levelInfo(pub),
   });
@@ -765,11 +757,11 @@ function handleMe(req, res) {
 // Batas episode = max(is_sub, is_dub) di anime_cache (jumlah episode
 // SUB/DUB dari Anikoto), atau episode_count di series_cache bila detail
 // anime itu pernah diambil. Catatan progres tonton TIDAK dipakai sebagai
-// bukti tambahan: saveContinue saat complete menulis position=0 /
-// duration=0 (watch.js) sehingga baris progres saat complete tidak bisa
-// diandalkan, dan /api/continue menerima posisi apa pun dari klien
+// bukti tambahan: /api/continue menerima posisi apa pun dari klien
 // sehingga buktinya mudah dipalsukan — validasi katalog + nomor episode
-// adalah pertahanan yang benar di sini.
+// adalah pertahanan yang benar di sini. Sebaliknya, event complete yang
+// sudah divalidasi INI dipakai untuk menandai baris progres episode itu
+// 100% / ditonton (F-01 v1.5.8, TB2).
 function handleWatchComplete(req, res) {
   if (!mw.requireLogin(req, res)) return true;
   // M3: 60 complete per pengguna per menit (satu panggilan per episode
@@ -790,6 +782,21 @@ function handleWatchComplete(req, res) {
   if (ser && ser.episode_count) maxEp = Math.max(maxEp, ser.episode_count);
   if (episode > maxEp) return err(res, 400, 'Nomor episode tidak valid untuk anime ini.');
   const r = levels.awardWatchExp(req.user.id, animeId, episode);
+  // F-01 (v1.5.8, TB2): episode selesai → baris progres harus 100% /
+  // ditonton. saveContinue saat complete dulu menulis 0/0 sehingga
+  // baris tertimpa percent 0 — tandai di sini dari event complete yang
+  // sudah divalidasi katalog (bukan dari posisi klien). Pakai durasi
+  // yang sudah tersimpan bila ada, kalau tidak 1/1 (percent 100,
+  // watched) — resume tetap 0 untuk episode selesai.
+  const now = Math.floor(Date.now() / 1000);
+  const prow = db.prepare('SELECT duration_sec FROM watch_progress WHERE user_id = ? AND anime_id = ? AND episode = ?').get(req.user.id, animeId, episode);
+  const dur = prow && prow.duration_sec > 0 ? prow.duration_sec : 1;
+  db.prepare(
+    `INSERT INTO watch_progress (user_id, anime_id, episode, position_sec, duration_sec, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, anime_id, episode) DO UPDATE SET
+       position_sec=excluded.position_sec, duration_sec=excluded.duration_sec, updated_at=excluded.updated_at`,
+  ).run(req.user.id, animeId, episode, dur, dur, now);
   return send(res, 200, {
     ok: true,
     exp_gained: r.exp_gained,
@@ -822,6 +829,12 @@ function handleUpdateProfile(req, res) {
   let avatar = null;
   let avatarSet = false;
   if (hasAvatar) {
+    // v1.5.7 (item 37, D16): foto profil mengikuti akun Google — bila
+    // pengguna punya avatar_url (foto Google), preset TIDAK BOLEH
+    // menimpanya. Ganti nama tetap diizinkan (cabang username di bawah).
+    if (req.user.avatar_url) {
+      return err(res, 400, 'Foto profil mengikuti akun Google kamu.');
+    }
     if (b.avatar === null) {
       avatar = null; avatarSet = true;
     } else if (avatars.isValidAvatar(b.avatar)) {
@@ -852,7 +865,6 @@ function handleUpdateProfile(req, res) {
   return send(res, 200, {
     ok: true,
     user: pub,
-    premium: premium.premiumInfo(pub),
     level: levels.levelInfo(pub),
     message: 'Profil diperbarui.',
   });
@@ -1084,6 +1096,15 @@ function handleSaveContinue(req, res) {
   if (position > 86400 || duration > 86400) return err(res, 400, 'Posisi atau durasi di luar batas wajar.');
   const now = Math.floor(Date.now() / 1000);
   const db = require('../db/database').get();
+  // F-01 (v1.5.8, TB2): simpan 0/0 untuk episode yang SUDAH selesai
+  // (ada award EXP) diabaikan — 0/0 tidak membawa informasi posisi dan
+  // hanya menimpa baris 100% jadi percent 0. Urutan complete vs
+  // continue tidak dijamin, jadi penjaga ini membuat hasil akhir
+  // deterministik di kedua urutan; simpan posisi nyata tetap jalan.
+  if (position === 0 && duration === 0) {
+    const awarded = db.prepare('SELECT 1 FROM episode_exp_awards WHERE user_id = ? AND anime_id = ? AND episode = ?').get(req.user.id, animeId, episode);
+    if (awarded) return send(res, 200, { ok: true, message: 'Posisi tonton tersimpan.' });
+  }
   db.prepare(
     `INSERT INTO watch_progress (user_id, anime_id, episode, position_sec, duration_sec, updated_at)
      VALUES (?, ?, ?, ?, ?, ?)

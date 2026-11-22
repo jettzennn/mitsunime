@@ -2,8 +2,6 @@
    Mitsunime — Dark Lime (task-09 s/d task-13)
    Token dan ukuran fluid dari tasks/design-template.md.
    Mobile-first 390px (Vivo V11 Pro) sampai 4K 3840px.
-   Premium v1 = AKSESORI PROFIL SAJA — tidak ada gaya "terkunci"
-   pada konten, tidak ada chip PREMIUM pada kartu anime.
    ============================================================ */
 :root {
   /* Skema warna gelap untuk kontrol native browser (daftar opsi
@@ -25,11 +23,56 @@
   --border: rgba(255, 255, 255, 0.14);
   --shadow: rgba(0, 0, 0, 0.45);
   --font-display: 'Anton', 'Archivo Black', 'Arial Black', system-ui, sans-serif;
-  --font-ui: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-ui: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   --radius-card: clamp(12px, 1.25vw, 28px);
   --radius-btn: clamp(10px, 0.94vw, 20px);
   --shell: min(100%, 3200px);
   --pad-x: clamp(16px, 2.5vw, 32px);
+}
+
+/* Item 44 (v1.5.8, T3): font subtitle yang dibundel LOKAL —
+   Noto Sans + Lato + Roboto + Poppins (Fontsource, OFL) +
+   Liberation Sans (OFL, fallback Arial) + TeX Gyre Heros
+   (lisensi GUST, fallback Helvetica). Trebuchet MS + Arial +
+   Helvetica sendiri TIDAK dibundel (tumpukan sistem — tanpa klon
+   OFL Trebuchet; Arial/Helvetica asli butuh lisensi komersial).
+   Berkas di /fonts/ (subset latin, weight 400 saja — ::cue tidak
+   memakai bold kecuali entri Trebuchet MS Bold yang memakai
+   font-weight 700 dari opsi), masuk SHELL SW. font-display: swap
+   supaya subtitle tetap tampil dengan fallback selama font dimuat.
+   Inter + Comic Neue DIHAPUS item 44 (berkas + @font-face + entri
+   FONT_OPTIONS); 'Inter' juga dihapus dari --font-ui di atas
+   (dengan @font-face-nya hilang, namanya sudah tidak ter-resolve —
+   UI jatuh ke system-ui seperti semula). */
+@font-face {
+  font-family: 'Noto Sans';
+  src: url('/fonts/noto-sans-latin-400-normal.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Lato';
+  src: url('/fonts/lato-latin-400-normal.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/roboto-latin-400-normal.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Poppins';
+  src: url('/fonts/poppins-latin-400-normal.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'Liberation Sans';
+  src: url('/fonts/liberation-sans-latin-400-normal.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'TeX Gyre Heros';
+  src: url('/fonts/tex-gyre-heros-latin-400-normal.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
 }
 
 /* v1.4.2 (F-02): matikan kotak biru saat mengetuk (highlight ketuk
@@ -97,6 +140,40 @@ h1, h2, h3 { margin: 0; line-height: 1.1; }
   position: absolute; left: 0; bottom: -0.12em;
   width: 100%; height: 0.09em;
   background: var(--lime); border-radius: 2px;
+}
+
+/* ---------- Halaman legal (item 39 v1.5.8) ----------
+   Judul SATU BARIS + garis lime di BAWAH seluruh judul (bukan di
+   tengah kata beraksen); isi sebagai klausul bernomor. Hanya untuk
+   halaman legal (.page-legal) — judul seksi lain tidak berubah. */
+.page-legal .section-title { width: max-content; max-width: 100%; }
+.page-legal .section-title .accent-word::after { display: none; }
+.page-legal .section-title::after {
+  content: ""; display: block; width: 100%; height: 0.09em;
+  margin-top: 0.06em; background: var(--lime); border-radius: 2px;
+}
+.legal-clauses { list-style: none; margin: 24px 0 0; padding: 0; }
+.legal-clause {
+  display: flex; gap: 16px; padding: 18px 0;
+  border-top: 1px solid var(--border);
+}
+.legal-clause:first-child { border-top: none; padding-top: 0; }
+.legal-clause__title {
+  flex: 0 0 220px; font-size: clamp(14px, 1.25vw, 18px);
+  font-weight: 800; line-height: 1.4;
+}
+.legal-clause__num {
+  font-family: var(--font-display); font-weight: 400;
+  color: var(--lime); margin-right: 8px;
+}
+.legal-clause__text {
+  margin: 0; flex: 1; min-width: 0;
+  font-size: 15px; line-height: 1.7; color: var(--text-2);
+}
+.legal-clause__text a { color: var(--lime); text-decoration: underline; }
+@media (max-width: 768px) {
+  .legal-clause { flex-direction: column; gap: 4px; }
+  .legal-clause__title { flex: none; }
 }
 .page-title {
   font-family: var(--font-display);
@@ -167,7 +244,6 @@ h1, h2, h3 { margin: 0; line-height: 1.1; }
 .badge-new { background: var(--lime); color: var(--text-dark); }
 .badge-popular { border: 1px solid var(--lime); color: var(--lime); background: rgba(12, 15, 20, 0.65); }
 .chip-status { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 6px 12px; border-radius: 999px; white-space: nowrap; }
-.chip-status--premium { background: var(--lime); color: var(--text-dark); }
 .chip-status--gratis { background: transparent; border: 1px solid rgba(255, 255, 255, 0.5); color: #fff; }
 .chip-status--wait { background: var(--gold); color: var(--text-dark); }
 .chip-status--ok { background: var(--lime); color: var(--text-dark); }
@@ -213,13 +289,16 @@ h1, h2, h3 { margin: 0; line-height: 1.1; }
   width: 44px; height: 44px; border-radius: 50%;
   background: var(--surface-raised); border: 1.5px solid var(--lime);
   color: var(--lime); font-weight: 700; font-size: 16px; flex-shrink: 0;
+  overflow: hidden;
 }
-.header-premium-btn { display: none; }
+/* Foto profil Google (v1.5.7, item 37): <img> mengisi lingkaran avatar. */
+.header-avatar img, .profile-avatar img {
+  width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;
+}
 .hamburger { display: inline-flex; }
 @media (min-width: 1024px) {
   .site-nav { display: flex; }
   .hamburger { display: none; }
-  .header-premium-btn { display: inline-flex; }
 }
 .drawer-backdrop {
   position: fixed; inset: 0; z-index: 60;
@@ -616,12 +695,22 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
   border-radius: 12px; padding: 10px 14px; color: var(--text); text-align: left;
 }
 .episode-item:hover { border-color: rgba(199, 246, 50, 0.5); }
-.episode-item.is-current { border-color: var(--lime); background: var(--surface-raised); }
+/* v1.5.8 item 49: episode yang SEDANG diputar dibedakan lewat border +
+   outline lime TANPA tint — supaya aktif vs ditonton tidak tertukar. */
+.episode-item.is-current { border-color: var(--lime); background: var(--surface-raised); outline: 2px solid var(--lime); outline-offset: -2px; }
+/* v1.5.8 item 49: baris sudah ditonton — tint lime + nomor lime. Bila
+   aktif DAN ditonton sekaligus: border/outline aktif + tint ditonton. */
+.episode-item.is-watched { background: rgba(199, 246, 50, 0.08); border-color: rgba(199, 246, 50, 0.35); }
+.episode-item.is-current.is-watched { background: rgba(199, 246, 50, 0.08); }
+.episode-item.is-watched .episode-item__num { color: var(--lime); }
 .episode-item__num { font-family: var(--font-display); font-size: 18px; min-width: 44px; text-align: center; flex-shrink: 0; }
 .episode-item__body { flex: 1; min-width: 0; }
 .episode-item__title { display: block; font-weight: 700; font-size: 14px; line-height: 1.3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .episode-item__sub { display: block; font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.episode-item__watched { color: var(--lime); flex-shrink: 0; display: inline-flex; }
+/* v1.5.8 item 49: centang lime + label teks "Sudah ditonton" (dulu hanya
+   ikon 16 px tanpa label — mudah terlewat, lihat diagnosis-item49.md). */
+.episode-item__watched { color: var(--lime); flex-shrink: 0; display: inline-flex; align-items: center; gap: 6px; }
+.episode-item__watched-label { font-size: 12px; font-weight: 700; color: var(--lime); white-space: nowrap; }
 .episode-item__chev { color: var(--text-dim); flex-shrink: 0; display: inline-flex; }
 .episode-thumb { width: 80px; aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; flex-shrink: 0; background: var(--surface-raised); }
 .episode-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -731,20 +820,53 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
   display: flex; align-items: center; justify-content: center; pointer-events: none;
 }
 .player__center[hidden] { display: none; }
+/* Item 48 H2 (v1.5.8, T3): tombol tengah tetap tampil DI ATAS overlay
+   loading (z-index 5) — kecuali overlay error. Kelas dipasang
+   refreshBarDom saat overlayKind === 'loading'. */
+.player__center--over-overlay { z-index: 6; }
 .player-center-btn {
   pointer-events: auto; width: 72px; height: 72px; border-radius: 50%;
   border: 2px solid rgba(255,255,255,0.85); background: rgba(0,0,0,0.55);
   color: #fff; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
 }
 .player-center-btn:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+/* Item 48 H3 (v1.5.8, T3): tombol tengah diperbesar di HP — 96 px
+   + ikon 40 px (CSS menimpa atribut width/height SVG 32 px di
+   watch.html) + latar lebih gelap (0.65). Pola media query sama
+   seperti T2 (menu ⋮): lebar ≤768 px ATAU landscape HP tinggi
+   ≤500 px — fullscreen landscape ikut besar. Desktop tetap 72 px. */
+@media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
+  .player-center-btn { width: 96px; height: 96px; background: rgba(0,0,0,0.65); }
+  .player-center-btn svg { width: 40px; height: 40px; }
+}
 .player__menu {
   position: absolute; right: 8px; bottom: 62px; z-index: 4;
-  display: flex; max-width: calc(100% - 16px); max-height: 70%;
-  overflow-y: auto; background: rgba(14,17,21,0.97);
-  border: 1px solid var(--border); border-radius: 12px; padding: 10px 4px;
+  display: flex; flex-direction: column; max-width: calc(100% - 16px); max-height: 70%;
+  overflow: hidden; background: rgba(14,17,21,0.97);
+  border: 1px solid var(--border); border-radius: 12px; padding: 0;
   color: var(--text);
 }
 .player__menu[hidden] { display: none; }
+/* Item 31 (§4.2.5 butir 2, T2): di fullscreen, menu boleh memakai
+   hampir seluruh tinggi player supaya semua kontrol subtitle muat.
+   Item 47 (v1.5.8): gulir-me-reset-timer tidak lagi relevan — timer
+   auto-hide DITANGGUHKAN selama menu terbuka, jadi menu tidak bisa
+   menutup di tengah gulir. */
+.player:fullscreen .player__menu { max-height: calc(100% - 70px); }
+/* Item 46 (v1.5.8, T2): gagang drag di atas menu — selalu terlihat
+   (di luar area gulir .player-menu__body). */
+.player-menu__grip {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 36px; padding: 8px 12px 4px; cursor: grab; touch-action: none;
+  color: var(--text-dim); font-size: 12px; font-weight: 700;
+  user-select: none; -webkit-user-select: none;
+}
+.player-menu__grip:active { cursor: grabbing; }
+.player-menu__grip:focus-visible { outline: 2px solid var(--lime); outline-offset: -2px; }
+.player-menu__grip-dots { font-size: 14px; line-height: 1; letter-spacing: 1px; }
+/* Item 43 (v1.5.8, T2): wadah isi menu — baris 3 kolom di desktop,
+   kolom tunggal di HP (lihat media query di bawah); area gulir. */
+.player-menu__body { display: flex; overflow-y: auto; padding: 2px 4px 10px; min-height: 0; }
 .player-menu__col { min-width: 0; padding: 0 8px; }
 #menu-lang { flex: 34 1 0; }
 #menu-speed { flex: 26 1 0; }
@@ -765,6 +887,30 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 .player-menu__check { flex: 0 0 auto; width: 14px; height: 14px; visibility: hidden; color: var(--lime); }
 .player-menu__check svg { width: 14px; height: 14px; display: block; }
 .player-menu__row.is-active .player-menu__check { visibility: visible; }
+
+/* Item 43 (v1.5.8, T2): SATU KOLOM di HP — lebar ≤768 px, atau
+   landscape pendek (fullscreen landscape HP: lebar 780–890 px tapi
+   tinggi ~390 px — tetap satu kolom supaya menu tidak menutupi
+   setengah layar, sesuai §13 butir 5). Desktop lebar + tinggi
+   normal tetap 3 kolom. */
+@media (max-width: 768px), (orientation: landscape) and (max-height: 500px) {
+  .player__menu { width: min(420px, calc(100% - 16px)); }
+  .player-menu__body { flex-direction: column; }
+  .player-menu__col { padding: 6px 8px; }
+  #menu-lang, #menu-speed, #menu-sub { flex: none; }
+  .player-menu__col + .player-menu__col { border-left: none; border-top: 1px solid var(--border); }
+  .player-menu__title { font-size: 13px; }
+  .player-menu__row { min-height: 40px; font-size: 13px; padding: 6px 8px; }
+  /* Diawali .player__menu supaya menang lawan aturan dasar .sub-*
+     yang datang belakangan di berkas ini (spesifisitas sama kalah
+     oleh urutan sumber). */
+  .player__menu .sub-field { padding: 6px 0; }
+  .player__menu .sub-select { min-height: 40px; font-size: 13px; }
+  .player__menu .sub-range { height: 40px; }
+  .player__menu .sub-row { min-height: 40px; }
+  .player__menu .sub-color { width: 32px; height: 32px; }
+  .player__menu .sub-swatch { width: 28px; height: 28px; }
+}
 
 /* Isi seksi Subtitle di menu ⋮ (item 14, T2). Kolom #menu-sub sempit
    (~40% lebar menu), jadi tiap pengaturan ditumpuk: label di atas,
@@ -798,10 +944,23 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 .sub-reset:hover { background: rgba(255,255,255,0.08); }
 .sub-reset:focus-visible { outline: 2px solid var(--lime); outline-offset: 0; }
 
+/* Saklar Shadow/Outline (item 33, T2): checkbox accent lime,
+   konsisten dengan .sub-range. Bila saklar mati, input color +
+   preset di field itu dimatikan (atribut disabled dari JS) dan
+   diredupkan lewat .is-off pada field — tidak bisa diubah. */
+.sub-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); cursor: pointer; min-height: 32px; }
+.sub-check { width: 20px; height: 20px; margin: 0; accent-color: var(--lime); cursor: pointer; }
+.sub-field.is-off .sub-color, .sub-field.is-off .sub-swatch { opacity: .35; }
+.sub-color:disabled, .sub-swatch:disabled { cursor: default; }
+
 /* Item 18 (T2): sembunyikan tombol × bawaan Chrome HANYA pada input
    pencarian utama. Input admin (#user-search, #anime-search) TIDAK
    disentuh — × bawaan tetap satu-satunya cara menghapus di sana. */
 #search-input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+
+/* v1.5.8 item 50: sama untuk kolom cari episode — tombol ×-nya adalah
+   #ep-search-clear, bukan × bawaan browser. */
+#ep-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
@@ -879,11 +1038,10 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 .pw-toggle svg { width: 20px; height: 20px; }
 
 /* Level + EXP (v1.3.1): chip level di kartu profil + bar progres ke
-   level berikut. Admin memakai chip emas, bukan chip level biasa. */
-.level-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+   level berikut. (.level-row/.level-exp lama dihapus v1.5.10 —
+   levelHTML sekarang merender baris grid .profile-row.) */
 .chip-status--level { background: var(--lime); color: var(--text-dark); }
 .chip-status--admin { background: var(--gold); color: var(--text-dark); }
-.level-exp { font-size: 13px; color: var(--text-dim); }
 .level-progress { height: 6px; background: rgba(255,255,255,0.15); border-radius: 3px; overflow: hidden; margin-top: 8px; }
 .level-progress i { display: block; height: 100%; background: var(--lime); }
 .form-switch { text-align: center; font-size: 14px; color: var(--text-2); margin-top: 16px; }
@@ -969,13 +1127,21 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 .pagination { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
 .pagination .page-info { color: var(--text-dim); font-size: 14px; padding: 0 8px; }
 
-/* ---------- Akun & premium ---------- */
+/* ---------- Akun ---------- */
+/* Kartu profil ala kartu nama (v1.5.10 item 55): nama besar di atas,
+   lalu baris-baris info rapi (label + nilai sejajar). Kartu biasa
+   polos; hanya .profile-card--admin yang berornamen lime. */
 .profile-card {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 20px; padding: clamp(20px, 2.5vw, 28px);
-  display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap;
+  border-radius: 20px; padding: 20px;
   position: relative; overflow: hidden;
 }
+@media (max-width: 360px) { .profile-card { padding: 16px; } }
+.profile-card__head {
+  display: grid; grid-template-columns: 72px minmax(0, 1fr);
+  gap: 16px; align-items: center;
+}
+.profile-card__identity { min-width: 0; }
 .profile-avatar {
   width: 72px; height: 72px; border-radius: 50%; flex-shrink: 0;
   background: var(--surface-raised); border: 2px solid var(--lime);
@@ -983,12 +1149,172 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
   font-size: 28px; font-weight: 700; color: var(--lime);
   position: relative;
 }
-.profile-name { font-size: 20px; font-weight: 700; margin: 0; line-height: 1.2; }
-.profile-email { color: var(--text-dim); font-size: 14px; margin: 4px 0 0; }
+.profile-name {
+  font-family: var(--font-display); font-size: 24px; font-weight: 400;
+  text-transform: uppercase; line-height: 1.05; margin: 0;
+  color: var(--text); overflow-wrap: anywhere;
+}
+.profile-name-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+}
+.profile-email { color: var(--text-dim); font-size: 14px; margin: 4px 0 0; overflow-wrap: anywhere; }
+.profile-card__divider { border: 0; border-top: 1px dashed rgba(255,255,255,0.14); margin: 16px 0; }
+.profile-rows { display: grid; gap: 10px 12px; margin: 0; }
+.profile-row {
+  display: grid; grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px; align-items: baseline; margin: 0;
+}
+.profile-row dt {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--text-dim); min-width: 0;
+}
+.profile-row dd {
+  font-size: 14px; color: var(--text); margin: 0; min-width: 0;
+  overflow-wrap: anywhere;
+}
+.profile-row__progress { grid-column: 1 / -1; }
+.profile-row__progress .level-progress { margin-top: 0; }
+/* Kartu ADMIN saja: garis atas + border lime, kurung sudut 4 sudut,
+   pola diagonal pojok kanan atas, teks hantu ADMIN, avatar lime. */
+.profile-card--admin { border: 1px solid var(--lime); border-top: 3px solid var(--lime); }
+.profile-card--admin::before {
+  content: ""; position: absolute; inset: 10px; pointer-events: none;
+  background:
+    linear-gradient(var(--lime), var(--lime)) left top / 22px 2px,
+    linear-gradient(var(--lime), var(--lime)) left top / 2px 22px,
+    linear-gradient(var(--lime), var(--lime)) right top / 22px 2px,
+    linear-gradient(var(--lime), var(--lime)) right top / 2px 22px,
+    linear-gradient(var(--lime), var(--lime)) left bottom / 22px 2px,
+    linear-gradient(var(--lime), var(--lime)) left bottom / 2px 22px,
+    linear-gradient(var(--lime), var(--lime)) right bottom / 22px 2px,
+    linear-gradient(var(--lime), var(--lime)) right bottom / 2px 22px;
+  background-repeat: no-repeat;
+}
+.profile-card--admin::after {
+  content: ""; position: absolute; top: 0; right: 0; width: 96px; height: 96px;
+  pointer-events: none;
+  background: repeating-linear-gradient(45deg, rgba(199,246,50,0.10) 0 2px, transparent 2px 8px);
+}
+.profile-card--admin .profile-avatar { border-color: var(--lime); }
+.profile-level-max {
+  font-family: var(--font-display); font-size: 24px; line-height: 1;
+  color: var(--lime); text-transform: uppercase; vertical-align: middle;
+}
+.profile-admin-tag {
+  display: inline-block; background: var(--lime); color: var(--text-dark);
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; border-radius: 999px; padding: 4px 10px;
+  vertical-align: middle; white-space: nowrap;
+}
+.profile-card__ghost {
+  font-family: var(--font-display); font-size: 64px; line-height: 1;
+  text-transform: uppercase; color: rgba(255,255,255,0.04);
+  position: absolute; right: 12px; bottom: 8px; pointer-events: none;
+  z-index: 0;
+}
+/* Zona GFX — kartu ADMIN saja (revisi 2026-11-22): strip barcode
+   putih-off kiri + pola titik-titik kanan, garis putus-putus di
+   atas zona, kotak kecil 5px di kedua ujung garis. Duduk di atas
+   teks hantu (z-index 1 vs 0). */
+.profile-card--admin .profile-card__gfx {
+  position: relative; z-index: 1;
+  display: flex; justify-content: space-between; align-items: flex-end;
+  margin-top: 16px; padding-top: 12px;
+  border-top: 1px dashed rgba(255,255,255,0.25);
+}
+.profile-card--admin .profile-card__barcode {
+  width: 120px; height: 20px;
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(255,255,255,0.85) 0 2px, transparent 2px 5px,
+      rgba(255,255,255,0.85) 5px 6px, transparent 6px 11px,
+      rgba(255,255,255,0.85) 11px 14px, transparent 14px 17px,
+      rgba(255,255,255,0.85) 17px 19px, transparent 19px 24px);
+}
+.profile-card--admin .profile-card__dots {
+  width: 72px; height: 27px;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.35) 1.5px, transparent 1.6px);
+  background-size: 9px 9px;
+}
+.profile-card--admin .profile-card__gfx::before,
+.profile-card--admin .profile-card__gfx::after {
+  content: ""; position: absolute; top: -3px;
+  width: 5px; height: 5px; background: rgba(255,255,255,0.7);
+}
+.profile-card--admin .profile-card__gfx::before { left: 0; }
+.profile-card--admin .profile-card__gfx::after { right: 0; }
+@media (max-width: 360px) {
+  .profile-card--admin .profile-card__gfx { padding-top: 10px; }
+  .profile-card--admin .profile-card__barcode { width: 96px; height: 18px; }
+  .profile-card--admin .profile-card__dots { width: 60px; height: 27px; }
+}
+@media (min-width: 768px) {
+  .profile-card--admin .profile-card__barcode { width: 140px; height: 22px; }
+  .profile-card--admin .profile-card__dots { width: 88px; height: 36px; }
+}
+/* Flip kartu ADMIN (v1.5.10 item 55, F1–F5): klik membalik kartu ke
+   sisi belakang (logo Mitsunime + band white-off + ornamen GFX),
+   klik lagi kembali. Hanya admin; kartu biasa tanpa wrapper,
+   tanpa handler, tanpa hint. Sisi belakang absolute inset 0 —
+   tingginya selalu sama dengan depan, tidak ada loncat. */
+.profile-flip { perspective: 1000px; cursor: pointer; }
+.profile-flip__inner {
+  position: relative; transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.profile-flip.is-flipped .profile-flip__inner { transform: rotateY(180deg); }
+.profile-card__face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.profile-card__face--front { position: relative; }
+.profile-card__face--back {
+  position: absolute; inset: 0; transform: rotateY(180deg);
+  display: flex; flex-direction: column;
+}
+.profile-card__flip-hint { margin: 12px 0 0; text-align: center; font-size: 11px; color: var(--text-dim); }
+.profile-card__back-body {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; min-height: 0;
+}
+.profile-card__back-logo {
+  width: 88px; height: 88px; border-radius: 20px;
+  box-shadow: 0 8px 24px var(--shadow); display: block;
+}
+.profile-card__back-band {
+  align-self: stretch; margin: 12px -20px 0;
+  background: rgba(255,255,255,0.92); height: 52px;
+  display: flex; align-items: center; justify-content: center;
+}
+.profile-card__back-wordmark {
+  font-family: var(--font-display); font-size: 28px; line-height: 1;
+  color: var(--text-dark); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.profile-card__back-tagline {
+  margin: 10px 0 0; text-align: center; font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.12em; color: var(--text-dim);
+}
+@media (max-width: 360px) {
+  .profile-card__back-logo { width: 80px; height: 80px; }
+  .profile-card__back-band { margin: 12px -16px 0; height: 48px; }
+  .profile-card__back-wordmark { font-size: 24px; }
+}
+@media (min-width: 768px) {
+  .profile-flip { max-width: 640px; }
+  .profile-card__back-logo { width: 112px; height: 112px; }
+  .profile-card__back-band { height: 64px; }
+  .profile-card__back-wordmark { font-size: 32px; }
+  .profile-card__back-tagline { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .profile-flip__inner { transition: none; }
+}
+@media (min-width: 768px) {
+  .profile-card { max-width: 640px; }
+  .profile-card__head { grid-template-columns: 88px minmax(0, 1fr); }
+  .profile-avatar { width: 88px; height: 88px; font-size: 32px; }
+  .profile-name { font-size: 28px; }
+  .profile-row { grid-template-columns: 110px minmax(0, 1fr); }
+}
 .profile-status { display: flex; gap: 10px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
 .profile-until { color: var(--text-2); font-size: 14px; }
-.premium-progress { height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; overflow: hidden; margin-top: 10px; }
-.premium-progress i { display: block; height: 100%; background: var(--lime); }
 .account-sections { margin-top: 32px; display: flex; flex-direction: column; gap: 40px; }
 .tx-list { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
 .tx-row {
@@ -1024,13 +1350,6 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 .pay-box h3 { font-size: 18px; margin: 0 0 8px; }
 .pay-steps { margin: 12px 0 0; padding-left: 20px; color: var(--text-2); font-size: 14px; display: flex; flex-direction: column; gap: 6px; }
 
-/* ---------- QRIS manual (v1.1.0) ---------- */
-/* Kode QR butuh kontras tinggi: latar putih, gambar tidak pernah
-   di-crop. Ukuran fluid dari HP sampai 4K. */
-.qris-figure { margin: 16px auto; padding: 16px; background: #fff; border-radius: 16px; width: min(100%, 300px); text-align: center; }
-.qris-figure--admin { margin: 16px 0; }
-.qris-img { display: block; width: 100%; height: auto; }
-.qris-merchant { margin-top: 12px; font-size: 14px; font-weight: 700; color: #111; }
 .proof-preview { display: block; max-width: 100%; width: min(100%, 320px); height: auto; margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; }
 .proof-img { display: block; max-width: 100%; max-height: 60vh; height: auto; margin: 12px auto; border: 1px solid var(--border); border-radius: 12px; }
 
@@ -1053,7 +1372,7 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 .acc-frame-klasik { border: 2px solid var(--gold) !important; }
 /* F-04 (v1.3.2): aturan ::after lencana DIHAPUS — pill lencana selama
    ini menampilkan nama aksesori SEBAGAI TEKS ditambah label yang sama
-   lewat ::after ("LENCANA PREMIUM★ PREMIUM", "SETIASETIA"). Sekarang
+   lewat ::after ("LENCANA★", "SETIASETIA"). Sekarang
    pill hanya menampilkan teks nama saja, satu label. */
 .acc-nama-kilau {
   background: linear-gradient(90deg, #fff, var(--lime-bright), #fff);
@@ -1107,8 +1426,7 @@ a.drawer__account { text-decoration: none; min-height: 56px; }
 .edit-panel__section h3 { margin: 0 0 4px; font-size: 16px; }
 .edit-panel__hint { color: var(--text-dim); font-size: 13px; margin: 0; }
 /* Baris opsi aksesori di panel pensil: pratinjau + nama + tombol.
-   Satu baris per aksesori yang dimiliki; yang premium terkunci bila
-   Premium tidak aktif (tombol nonaktif + catatan). */
+
 .acc-row {
   display: flex; align-items: center; gap: 12px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 12px;

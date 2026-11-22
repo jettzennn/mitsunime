@@ -94,7 +94,7 @@ function normalizeSeriesData(data) {
     }
     // Flag admin Mitsunime pada data anime di dalam detail series.
     const flags = cache.getAnimeFlags(a.id);
-    if (flags) { a.sub_indo = flags.sub_indo; a.premium_only = flags.premium_only; }
+    if (flags) { a.sub_indo = flags.sub_indo; }
     // M2: mal_id/ani_id TIDAK PERNAH keluar ke payload publik — keduanya
     // adalah bahan pembangun URL fallback MegaPlay (lihat handleStream).
     delete a.mal_id;
@@ -284,9 +284,8 @@ function handleAZ(req, res, url) {
 // GET /api/series/:id/episodes/:ep/stream — URL embed MegaPlay untuk satu
 // episode. v1.4.5: TAMU BOLEH menonton (keputusan pengguna berubah —
 // "WAJIB LOGIN" dicabut); riwayat/progres/complete tetap wajib login.
-// TIDAK ADA kunci premium di sini: semua episode bisa ditonton siapa
-// saja, premium atau bukan (model premium v1 = aksesori profil saja,
-// keputusan pengguna 2026-11-15 ~06:55 WIB).
+// TIDAK ADA konten terkunci di sini: semua episode bisa ditonton siapa
+// saja yang sudah login.
 async function handleStream(req, res, url, idRaw, epRaw) {
   const id = Number.parseInt(idRaw, 10);
   const epNum = Number.parseInt(epRaw, 10);

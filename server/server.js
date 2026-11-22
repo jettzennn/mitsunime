@@ -15,8 +15,7 @@ const adminPath = require('./middleware/adminPath');
 const publicApi = require('./routes/public');
 const hdApi = require('./routes/hd');
 const accountApi = require('./routes/account');
-const premiumApi = require('./routes/premium');
-const accessoriesApi = require('./routes/accessories');
+const googleApi = require('./routes/google');
 const adminApi = require('./routes/admin');
 const { handleHealth } = require('./routes/health');
 const { autoSeedAdmin } = require('./services/adminSeed');
@@ -48,21 +47,12 @@ const MIME = {
 };
 
 const MAX_BODY_BYTES = 64 * 1024; // 64 KB — cukup untuk semua payload API kami
-// Batas lebih besar HANYA untuk endpoint unggah gambar (base64 di JSON):
-// buat transaksi manual (bukti bayar) + unggah kode QRIS admin. Gambar
-// maksimal 2 MB hasil decode (±2,7 MB base64 + JSON), jadi 4 MB cukup.
-// Endpoint lain tetap 64 KB.
-const MAX_UPLOAD_BODY_BYTES = 4 * 1024 * 1024;
-function isUploadPath(pathname) {
-  return pathname === '/api/premium/transactions/manual'
-    || pathname.endsWith('/api/settings/qris');
-}
 
 // Baca body JSON untuk POST/PUT. Bila kosong → req.body = null.
 // Body bukan JSON atau melebihi batas → 400/413, dan handler mengembalikan
 // false supaya server.js mengirim respons error (bukan melanjutkan).
-function readJsonBody(req, res, pathname) {
-  const limit = isUploadPath(pathname) ? MAX_UPLOAD_BODY_BYTES : MAX_BODY_BYTES;
+function readJsonBody(req, res) {
+  const limit = MAX_BODY_BYTES;
   return new Promise((resolve) => {
     const chunks = [];
     let size = 0;
@@ -170,7 +160,7 @@ const server = http.createServer(async (req, res) => {
       return res.end(JSON.stringify({ ok: false, message: 'Metode tidak diizinkan.' }));
     }
     if (req.method === 'POST' || req.method === 'PUT') {
-      const okBody = await readJsonBody(req, res, url.pathname);
+      const okBody = await readJsonBody(req, res);
       if (!okBody) return;
     } else {
       req.body = null;
@@ -198,7 +188,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === '/api/health') return handleHealth(req, res);
     if (url.pathname === '/robots.txt') return serveRobots(req, res);
     if (url.pathname.startsWith('/api/')) {
-      const routers = [accountApi, premiumApi, accessoriesApi, publicApi, hdApi];
+      const routers = [accountApi, googleApi, publicApi, hdApi];
       for (const r of routers) {
         const handled = await r.route(req, res, url);
         if (handled) return;
@@ -260,7 +250,6 @@ server.listen(config.PORT, config.HOST, () => {
   } else {
     logger.warn('ADMIN_PATH kosong di .env — rute admin TIDAK hidup. Isi ADMIN_PATH lalu jalankan ulang.');
   }
-  logger.info(`Gateway: ${config.PAYMENT_GATEWAY}${config.MIDTRANS_SERVER_KEY ? '' : ' (kunci Midtrans belum diisi — pembayaran akan menolak dengan 503)'}`);
   logger.info('Tekan Ctrl+C untuk berhenti.');
   // v1.5.1 (§10): sync katalog ringan otomatis di dalam proses server —
   // sekali saat start (fire-and-forget, tidak memblokir listen) + interval

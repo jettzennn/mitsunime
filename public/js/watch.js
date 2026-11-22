@@ -286,6 +286,10 @@ function wirePlayerControls() {
    Bar + menu adalah satu unit dengan satu timer auto-hide ~3,6 dtk
    (disamakan dengan timing hide kontrol natif). State tampil/hilang
    di satu tempat (cc.visible) — dibaca pemicu item 12 (T3).
+   Item 47 (v1.5.8): timer DITANGGUHKAN selama menu terbuka
+   (armHideTimer no-op saat cc.menuOpen; hideCustomControls menolak
+   menyembunyikan bar) — menu menutup hanya lewat 5 jalur, lihat
+   closePlayerMenu().
    Bila init gagal (exception apa pun), video mendapat kembali
    atribut controls (kontrol natif) — video tidak pernah tanpa
    kontrol (§5.6). */
@@ -299,6 +303,7 @@ var cc = {
   scrubbing: false, suppressApply: false, dropPending: false,
   dropInFlight: false, dropLastAt: 0, dropCount: 0, applyDeferred: false,
   inited: false, failed: false,
+  menuDrag: null, dragEndAt: 0, /* v1.5.8 item 46: status drag menu */
 };
 
 function ccEl(id) { return document.getElementById(id); }
@@ -317,9 +322,14 @@ function fallbackNativeControls() {
 function refreshBarDom() {
   if (!cc.bar || !cc.center || !cc.video) return;
   cc.bar.hidden = !(cc.enabled && cc.visible && !cc.overlayUp);
-  /* Tombol play tengah tampil saat pause (bukan saat overlay
-     loading/error menutupi player). */
-  cc.center.hidden = !(cc.enabled && !cc.overlayUp && cc.video.paused);
+  /* Item 48 H2 (v1.5.8, T3): tombol play tengah tampil saat pause —
+     JUGA di atas overlay loading (bukan overlay error): saat video
+     mentok "Memuat video..." dalam keadaan jeda, pengguna tetap
+     punya tombol untuk mencoba lagi. Kelas --over-overlay menaikkan
+     z-index di atas overlay (5). */
+  var overLoading = cc.overlayUp && typeof watch !== 'undefined' && watch.overlayKind === 'loading';
+  cc.center.hidden = !(cc.enabled && cc.video.paused && (!cc.overlayUp || overLoading));
+  if (cc.center.classList) cc.center.classList.toggle('player__center--over-overlay', overLoading && !cc.center.hidden);
 }
 
 function clearHideTimer() {
@@ -327,6 +337,7 @@ function clearHideTimer() {
 }
 function armHideTimer() {
   clearHideTimer();
+  if (cc.menuOpen) return; /* v1.5.8 item 47: timer auto-hide DITANGGUHKAN selama menu ⋮ terbuka */
   if (!cc.video || cc.video.paused) return; /* pause: bar tetap tampil */
   cc.hideTimer = setTimeout(function () { cc.hideTimer = null; hideCustomControls(); }, CC_HIDE_MS);
 }
@@ -339,6 +350,7 @@ function showCustomControls() {
   armHideTimer();
 }
 function hideCustomControls() {
+  if (cc.menuOpen) return; /* v1.5.8 item 47: bar ditahan tampil selama menu terbuka */
   var wasVisible = cc.visible;
   cc.visible = false;
   closePlayerMenu('autohide');
@@ -419,38 +431,181 @@ function setCustomBarEnabled(on) {
 
 function openPlayerMenu() {
   if (!cc.enabled || cc.failed || !cc.menu) return;
+  resetMenuPosition(); /* item 46: tiap buka, posisi kembali default */
   cc.menuOpen = true;
   cc.menu.hidden = false;
   var btn = ccEl('player-menu-btn');
   if (btn) btn.setAttribute('aria-expanded', 'true');
-  resetHideTimer();
+  clearHideTimer(); /* item 47: timer ditangguhkan selama menu terbuka */
 }
+/* v1.5.8 item 47 — menu menutup HANYA lewat 5 jalur (§4.9.3 butir 3):
+   outside / toggle / esc / server / overlay / fullscreen. Alasan lain
+   ('select', 'sub-*', 'autohide') DIABAIKAN: memilih isi menu tidak
+   lagi menutup menu. Penegakan terpusat di sini — subprefs.js masih
+   memanggil window.closePlayerMenu('sub-*') dan pemilih Bahasa/
+   Kecepatan lama memanggil 'select'; semuanya menjadi no-op di sini,
+   jadi subprefs.js tidak perlu diubah. */
+var MENU_CLOSE_ALLOWED = { outside: 1, toggle: 1, esc: 1, server: 1, overlay: 1, fullscreen: 1 };
 function closePlayerMenu(reason) {
   if (!cc.menuOpen) return;
+  if (!MENU_CLOSE_ALLOWED[reason]) return; /* item 47: abaikan */
   cc.menuOpen = false;
   if (cc.menu) cc.menu.hidden = true;
   var btn = ccEl('player-menu-btn');
   if (btn) btn.setAttribute('aria-expanded', 'false');
+  resetMenuPosition(); /* item 46: posisi kembali default tiap tutup */
+  /* item 47 butir 4: sesudah menu tertutup, timer 3,6 dtk jalan lagi. */
+  if (cc.visible) armHideTimer();
 }
 function togglePlayerMenu() {
   if (cc.menuOpen) closePlayerMenu('toggle');
   else openPlayerMenu();
 }
-/* Dipakai subprefs.js (menu Subtitle): slider dilepas / Atur Ulang
-   menutup menu sesudah pilihan di-commit (§5.8.2 (c)). */
+/* Dipakai subprefs.js (menu Subtitle): closePlayerMenu() kini
+   menegakkan aturan item 47 — panggilan 'sub-*' (pilih font/warna,
+   Atur Ulang) DIABAIKAN, menu tetap terbuka. resetCustomHideTimer
+   tetap ada; saat menu terbuka armHideTimer() menjadi no-op. */
 window.closePlayerMenu = closePlayerMenu;
 /* Dipakai subprefs.js (T2): interaksi di dalam menu (drag slider,
-   memilih warna) me-reset timer auto-hide — §5.8 (d) alasan 3. */
+   memilih warna) me-reset timer auto-hide — §5.8 (d) alasan 3.
+   Saat menu terbuka, reset ini no-op (item 47: timer ditangguhkan). */
 window.resetCustomHideTimer = resetHideTimer;
 
+/* ---------- Item 46 (v1.5.8, T2): drag menu ⋮ ----------
+   Gagang #player-menu-grip (bukan seluruh menu) yang bisa diseret —
+   pointer events (sentuh + mouse); gulir isi menu + geser slider
+   tetap jalan karena drag hanya dari gagang. Posisi dijepit di dalam
+   player (min 40 px menu tetap terlihat tiap sisi); posisi TIDAK
+   disimpan — tiap buka/tutup kembali ke default (resetMenuPosition).
+   Selama drag, timer ditahan + menu tidak menutup; klik yang muncul
+   sesudah drag (pointerup di luar menu) ditelan supaya tidak diartikan
+   sebagai ketuk-di-luar (item 47). */
+var MENU_DRAG_MIN_VISIBLE = 40;
+var MENU_DRAG_KEY_STEP = 16;
+function menuDragParentRect() {
+  var parent = (cc.menu && cc.menu.offsetParent) || cc.player;
+  if (!parent) return null;
+  return parent.getBoundingClientRect();
+}
+function clampMenuPos(left, top) {
+  var menu = cc.menu;
+  var parentRect = menuDragParentRect();
+  if (!menu || !parentRect) return { left: 0, top: 0 };
+  var w = menu.offsetWidth || 0, h = menu.offsetHeight || 0;
+  /* Atas: gagang di ujung atas menu — bila menu naik terlalu jauh,
+     gagang terpotong overflow player dan tidak bisa diraih lagi
+     (menu macet sampai ditutup + buka ulang). Jepit atas memakai
+     tinggi gagang: selalu ≥20 px gagang terlihat. Sisi lain tetap
+     aturan 40 px (§4.8.3 butir 2). */
+  var grip = ccEl('player-menu-grip');
+  var gripH = (grip && grip.offsetHeight) || 40;
+  var minTop = Math.max(-(h - MENU_DRAG_MIN_VISIBLE), -(gripH - 20));
+  /* F-03 (v1.5.8, TF2): jepit JUGA terhadap viewport — menu tidak
+     boleh menggantung melewati tepi layar. Batas viewport dihitung
+     dalam koordinat relatif-parent (left/top diukur dari parentRect).
+     Bila menu lebih lebar/tinggi dari viewport, kedua jepit bertabrakan
+     — utamakan tepi kiri/atas viewport supaya gagang tetap terjangkau. */
+  var vw = (typeof window !== 'undefined' && window.innerWidth) || parentRect.width;
+  var vh = (typeof window !== 'undefined' && window.innerHeight) || parentRect.height;
+  var leftMin = Math.max(-(w - MENU_DRAG_MIN_VISIBLE), -parentRect.left);
+  var leftMax = Math.min(parentRect.width - MENU_DRAG_MIN_VISIBLE, vw - parentRect.left - w);
+  if (leftMax < leftMin) leftMax = leftMin;
+  var topMin = Math.max(minTop, -parentRect.top);
+  var topMax = Math.min(parentRect.height - MENU_DRAG_MIN_VISIBLE, vh - parentRect.top - h);
+  if (topMax < topMin) topMax = topMin;
+  return {
+    left: Math.max(leftMin, Math.min(leftMax, left)),
+    top: Math.max(topMin, Math.min(topMax, top)),
+  };
+}
+function applyMenuPos(left, top) {
+  var p = clampMenuPos(left, top);
+  cc.menu.style.left = p.left + 'px';
+  cc.menu.style.top = p.top + 'px';
+  cc.menu.style.right = 'auto';
+  cc.menu.style.bottom = 'auto';
+  return p;
+}
+function resetMenuPosition() {
+  if (!cc.menu) return;
+  cc.menu.style.left = '';
+  cc.menu.style.top = '';
+  cc.menu.style.right = '';
+  cc.menu.style.bottom = '';
+}
+function menuCurrentPos() {
+  var menu = cc.menu;
+  var parentRect = menuDragParentRect();
+  if (!menu || !parentRect) return { left: 0, top: 0 };
+  var r = menu.getBoundingClientRect();
+  return { left: r.left - parentRect.left, top: r.top - parentRect.top };
+}
+function nudgeMenu(dx, dy) {
+  if (!cc.menuOpen || !cc.menu) return;
+  var cur = menuCurrentPos();
+  applyMenuPos(cur.left + dx, cur.top + dy);
+}
+function onMenuGripPointerDown(e) {
+  if (!cc.menuOpen || !cc.menu) return;
+  if (e.button != null && e.button !== 0) return;
+  /* Rotasi fallback CSS memutar .player__stage 90° — rect terhitung
+     jadi kotak sumbu-sejajar, drag akan terasa miring; di keadaan itu
+     gagang tidak memulai drag (menu tetap bisa dibuka/ditutup). */
+  if (cc.player && cc.player.classList.contains('ar-css-fallback')) return;
+  e.preventDefault();
+  var grip = ccEl('player-menu-grip');
+  var start = menuCurrentPos();
+  cc.menuDrag = {
+    pointerId: e.pointerId, startX: e.clientX, startY: e.clientY,
+    startLeft: start.left, startTop: start.top, moved: false,
+  };
+  clearHideTimer(); /* item 47: drag = aktivitas, timer ditahan */
+  try { if (grip) grip.setPointerCapture(e.pointerId); } catch (err) {}
+}
+function onMenuGripPointerMove(e) {
+  var d = cc.menuDrag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  var dx = e.clientX - d.startX, dy = e.clientY - d.startY;
+  if (!d.moved && Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
+  if (!d.moved) return;
+  e.preventDefault();
+  applyMenuPos(d.startLeft + dx, d.startTop + dy);
+}
+function onMenuGripPointerUp(e) {
+  var d = cc.menuDrag;
+  if (!d || e.pointerId !== d.pointerId) return;
+  cc.menuDrag = null;
+  cc.dragEndAt = Date.now();
+  /* Klik yang lahir dari pointerup di luar menu ditelan sekali —
+     kalau tidak, ketuk-di-luar (item 47) akan menutup menu tepat
+     sesudah drag selesai. */
+  if (d.moved) {
+    var swallow = function (ev) {
+      ev.stopPropagation();
+      ev.preventDefault();
+      document.removeEventListener('click', swallow, true);
+    };
+    document.addEventListener('click', swallow, true);
+    setTimeout(function () { document.removeEventListener('click', swallow, true); }, 500);
+  }
+}
+function onMenuGripPointerCancel(e) {
+  if (cc.menuDrag && e.pointerId === cc.menuDrag.pointerId) {
+    cc.menuDrag = null;
+    /* Drag dibatalkan browser (mis. gesture diambil alih) — tandai
+       juga sebagai akhir drag supaya klik yang menyusul tidak
+       diartikan sebagai ketuk-di-luar. */
+    cc.dragEndAt = Date.now();
+  }
+}
+
+/* v1.5.9 item 52: play TIDAK PERNAH lagi memicu fullscreen/rotasi.
+   Rotasi hanya saat tombol fullscreen ditekan (handler
+   fullscreenchange). */
 function togglePlay() {
   var v = cc.video;
   if (!v) return;
-  if (v.paused) {
-    v.play().catch(function () {});
-    /* Item 25 (a): aksi play pengguna saat pause → auto-rotate. */
-    autoRotateOnPlay();
-  }
+  if (v.paused) v.play().catch(function () {});
   else v.pause();
 }
 function syncPlayUI() {
@@ -517,13 +672,11 @@ function syncFsUI() {
   btn.setAttribute('aria-label', document.fullscreenElement ? 'Keluar dari layar penuh' : 'Layar penuh');
 }
 
-/* ---------- Item 25 (v1.5.4): auto-rotate saat play ----------
-   Niat play terdeteksi (aksi play pengguna saat pause, atau episode
-   baru mulai di playHdServer) → player masuk fullscreen lalu kunci
-   landscape. Keluar fullscreen membuka kunci. Pause TIDAK keluar
-   fullscreen dan TIDAK unlock. Server iframe tidak ikut. Semua
-   kegagalan diam-diam (tanpa toast/error) — video tetap jalan. */
-var _arPending = false; /* permintaan fullscreen auto-rotate sedang berjalan */
+/* v1.5.9 item 52: auto-rotate saat play (Item 25, v1.5.4) DIHAPUS —
+   play tidak pernah lagi memicu fullscreen/rotasi. Rotasi hanya saat
+   tombol fullscreen ditekan (handler fullscreenchange di bawah).
+   Keluar fullscreen membuka kunci. Pause TIDAK keluar fullscreen
+   dan TIDAK unlock. */
 var _arFbTimer = null; /* timer cek efek lock 600 ms (jalur B, Item 28) — hanya satu */
 function orientationLockSupported() {
   return !!(window.screen && screen.orientation && typeof screen.orientation.lock === 'function');
@@ -583,29 +736,12 @@ function unlockOrientation() {
   if (!orientationLockSupported()) return;
   try { screen.orientation.unlock(); } catch (e) { /* diam */ }
 }
-/* Niat play → fullscreen dulu, lock sesudah fullscreen aktif (§5.3.1).
-   Bila sudah fullscreen, langsung kunci. Bila API tidak didukung /
-   fullscreen dimatikan, lewati diam-diam (play tetap jalan). */
-function autoRotateOnPlay() {
-  if (!cc.enabled || cc.failed || !cc.player) return;
-  if (document.fullscreenEnabled === false) return;
-  if (!orientationLockSupported()) return;
-  if (document.fullscreenElement) { lockLandscape(); return; }
-  if (!cc.player.requestFullscreen) return;
-  _arPending = true;
-  try {
-    var p = cc.player.requestFullscreen();
-    if (p && typeof p.then === 'function') {
-      p.then(function () { if (_arPending) { _arPending = false; lockLandscape(); } })
-        .catch(function () { _arPending = false; /* diam */ });
-    }
-  } catch (e) { _arPending = false; /* diam */ }
-}
-
-/* Tap video: tap tunggal = tampil/sembunyi bar (seperti kontrol
-   natif); tap ganda di sepertiga kiri/kanan = ∓10 dtk. Tap pertama
-   double-tap langsung menampilkan bar (tanpa menunda yang terasa);
-   tap kedua yang menentukan seek. */
+/* v1.5.9 item 53: ketuk tunggal pada video HANYA menampilkan kontrol —
+   TIDAK LAGI toggle play/pause (perilaku v1.5.8 item 48 dihapus karena
+   ketuk ⋮ ikut mem-pause video). Play/pause hanya lewat tombol play
+   (tengah + bar kontrol). Tap ganda di sepertiga kiri/kanan tetap =
+   ∓10 dtk — tanpa timer 300 ms: ketuk pertama langsung tampilkan
+   kontrol, ketuk kedua di sisi yang sama <300 ms langsung seek. */
 function onVideoTap(e) {
   if (!cc.enabled || cc.failed || !cc.video) return;
   var v = cc.video;
@@ -636,7 +772,10 @@ function onVideoTap(e) {
   }
   cc.lastTapAt = now;
   cc.lastTapSide = side;
-  if (cc.visible) hideCustomControls(); else showCustomControls();
+  /* Ketuk tunggal: HANYA tampilkan kontrol — tanpa timer, tanpa
+     toggle play/pause (v1.5.9 item 53). */
+  showCustomControls();
+  resetHideTimer();
 }
 
 function onPlayerKeydown(e) {
@@ -661,6 +800,8 @@ function onPlayerKeydown(e) {
    (tidak play/pause, tidak seek, tidak toggle bar). */
 function onDocumentClickCapture(e) {
   if (!cc.menuOpen) return;
+  if (cc.menuDrag) return; /* item 46: sedang drag — bukan ketuk-di-luar */
+  if (Date.now() - (cc.dragEndAt || 0) < 500) return; /* item 46: klik sesudah drag */
   var menu = cc.menu, btn = ccEl('player-menu-btn');
   if (menu && menu.contains(e.target)) return;
   if (btn && btn.contains(e.target)) return;
@@ -712,7 +853,7 @@ function renderMenuLang() {
   list.querySelectorAll('.player-menu__row').forEach(function (btn) {
     btn.addEventListener('click', function () {
       setSubMode(btn.getAttribute('data-lang'));
-      closePlayerMenu('select');
+      /* item 47 (v1.5.8): memilih bahasa TIDAK menutup menu. */
     });
   });
 }
@@ -738,7 +879,7 @@ function renderMenuSpeed() {
       var v = parseFloat(btn.getAttribute('data-speed'));
       if (!isNaN(v) && cc.video) cc.video.playbackRate = v;
       renderMenuSpeed();
-      closePlayerMenu('select');
+      /* item 47 (v1.5.8): memilih kecepatan TIDAK menutup menu. */
     });
   });
 }
@@ -760,6 +901,22 @@ function initCustomControls() {
     ccEl('player-center-play').addEventListener('click', function () { togglePlay(); });
     ccEl('player-mute').addEventListener('click', function () { toggleMute(); resetHideTimer(); });
     ccEl('player-menu-btn').addEventListener('click', function () { togglePlayerMenu(); });
+    /* Item 46 (v1.5.8, T2): drag menu lewat gagang. Panah keyboard
+       menggeser 16 px (dengan jepit yang sama). */
+    var grip = ccEl('player-menu-grip');
+    if (grip) {
+      grip.addEventListener('pointerdown', onMenuGripPointerDown);
+      grip.addEventListener('pointermove', onMenuGripPointerMove);
+      grip.addEventListener('pointerup', onMenuGripPointerUp);
+      grip.addEventListener('pointercancel', onMenuGripPointerCancel);
+      grip.addEventListener('keydown', function (e) {
+        var step = MENU_DRAG_KEY_STEP;
+        if (e.key === 'ArrowLeft') { e.preventDefault(); nudgeMenu(-step, 0); }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); nudgeMenu(step, 0); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); nudgeMenu(0, -step); }
+        else if (e.key === 'ArrowDown') { e.preventDefault(); nudgeMenu(0, step); }
+      });
+    }
     ccEl('player-fs').addEventListener('click', function () { toggleFullscreen(); resetHideTimer(); });
     if (!document.fullscreenEnabled) { var fsBtn = ccEl('player-fs'); if (fsBtn) fsBtn.hidden = true; }
     var seek = ccEl('player-seek');
@@ -789,16 +946,22 @@ function initCustomControls() {
     video.addEventListener('durationchange', syncTimeUI);
     video.addEventListener('volumechange', syncVolumeUI);
     video.addEventListener('ratechange', renderMenuSpeed);
-    /* Item 25: keluar fullscreen → unlock orientasi; masuk fullscreen
-       sesudah permintaan auto-rotate → kunci landscape. Masuk manual
-       lewat tombol fullscreen TIDAK memicu lock (§5.3.4) — lock hanya
-       bila _arPending (dari autoRotateOnPlay) atau saat play. */
+    /* Item 29 (v1.5.6): TITIK CEKIK — SETIAP jalan masuk fullscreen
+       pada player custom mencoba lock (tombol manual, keyboard f).
+       Kunci HANYA bila elemen fullscreen adalah .player sendiri
+       (bukan iframe) dan player custom aktif. Rotasi diputuskan
+       saat MASUK FULLSCREEN, bukan saat play/pause (keputusan
+       Faygo 23:39 WIB; v1.5.9 item 52: jalur play sudah tidak
+       pernah lagi memicu fullscreen). */
     document.addEventListener('fullscreenchange', function () {
       syncFsUI();
       if (document.fullscreenElement) {
-        if (_arPending) { _arPending = false; lockLandscape(); }
+        resetMenuPosition(); /* item 46: ukuran player berubah — posisi drag direset */
+        if (document.fullscreenElement === cc.player && cc.enabled && !cc.failed && cc.player) {
+          lockLandscape();
+        }
       } else {
-        _arPending = false;
+        if (cc.menuOpen) closePlayerMenu('fullscreen'); /* item 47 butir 3e */
         /* Item 28: keluar fullscreen → LEPAS fallback + bersihkan timer
            pengecekan (§4.3.4). Video tetap jalan (keluar fullscreen
            bukan pause). */
@@ -1218,8 +1381,6 @@ async function playHdServer(entry, resumeTime) {
       renderQualityMenu(hls.levels || []);
       if (resume > 0) { try { video.currentTime = resume; } catch (e) {} }
       video.play().catch(function () { /* pengguna menekan play sendiri */ });
-      /* Item 25 (b): episode baru mulai diputar → auto-rotate. */
-      autoRotateOnPlay();
     });
     hls.on(Hls.Events.ERROR, function (event, data) { onHlsError(data); });
     hls.loadSource(d.hls_url);
@@ -1234,8 +1395,6 @@ async function playHdServer(entry, resumeTime) {
       });
     }
     video.play().catch(function () { /* pengguna menekan play sendiri */ });
-    /* Item 25 (b): episode baru mulai diputar → auto-rotate. */
-    autoRotateOnPlay();
   }
 }
 
@@ -1522,7 +1681,18 @@ function onWatchComplete() {
   hidePlayerOverlay();
   if (watch.currentEp) {
     markEpisodeWatchedLocal(watch.anime.id, watch.currentEp.number);
-    saveContinue(watch.anime, watch.currentEp, { lang: watch.lang, percent: 100, time: 0, duration: 0 });
+    /* F-01 (v1.5.8, TB2): kirim durasi sebenarnya, bukan 0/0 — save
+       0/0 menimpa baris progres server jadi percent 0 / belum
+       ditonton. Sumber: <video> HD bila ada, kalau tidak durasi dari
+       progres yang dimuat di awal halaman; 0 bila tidak diketahui
+       (server menandai lewat /api/watch/complete). */
+    var dur = 0;
+    var v = cc.video;
+    if (v && typeof v.duration === 'number' && v.duration > 0) dur = Math.round(v.duration);
+    if (!dur && watch.progress && watch.progress[watch.currentEp.number]) {
+      dur = Math.round(watch.progress[watch.currentEp.number].duration_sec || 0);
+    }
+    saveContinue(watch.anime, watch.currentEp, { lang: watch.lang, percent: 100, time: dur, duration: dur });
     reportWatchComplete(watch.anime.id, watch.currentEp.number);
     watch.progress[watch.currentEp.number] = { episode: watch.currentEp.number, percent: 100, watched: true };
     renderEpisodeList();
@@ -1620,6 +1790,16 @@ async function loadProgress() {
 }
 
 /* ---------- Daftar episode ---------- */
+
+/* v1.5.8 item 49: ambang ditonton klien ≥90% (sama seperti detail.js). */
+function isEpisodeWatchedWatch(ep) {
+  var prog = watch.progress[ep.number];
+  var pct = prog && typeof prog.percent === 'number' ? prog.percent : null;
+  if (pct !== null && pct >= 90) return true;
+  if (prog && prog.watched) return true;
+  return isEpisodeWatchedLocal(watch.anime.id, ep.number);
+}
+
 function renderEpisodeList() {
   var box = document.getElementById('episode-list');
   var btnMore = document.getElementById('btn-more-episodes');
@@ -1653,16 +1833,15 @@ function renderEpisodeList() {
   var shown = list.slice(start, start + watch.shown);
   if (jumpInfo) jumpInfo.textContent = 'Menampilkan Ep ' + shown[0].number + '–' + shown[shown.length - 1].number + ' dari ' + list.length + ' episode';
   box.innerHTML = shown.map(function (ep) {
-    var prog = watch.progress[ep.number];
-    var watched = (prog && prog.watched) || isEpisodeWatchedLocal(watch.anime.id, ep.number);
+    var watched = isEpisodeWatchedWatch(ep);
     var isCurrent = ep.number === watch.epNum;
-    return '<button type="button" class="episode-item' + (isCurrent ? ' is-current' : '') + '" data-ep="' + ep.number + '">' +
+    return '<button type="button" class="episode-item' + (isCurrent ? ' is-current' : '') + (watched ? ' is-watched' : '') + '" data-ep="' + ep.number + '">' +
       '<span class="episode-item__num">' + esc(ep.number) + '</span>' +
       '<span class="episode-item__body">' +
         '<span class="episode-item__title">' + esc(ep.title || ('Episode ' + ep.number)) + '</span>' +
         (ep.jp_title ? '<span class="episode-item__sub">' + esc(ep.jp_title) + '</span>' : '') +
       '</span>' +
-      (watched ? '<span class="episode-item__watched" title="Sudah ditonton">' + icon('check') + '</span>' : '') +
+      (watched ? '<span class="episode-item__watched" title="Sudah ditonton">' + icon('check') + '<span class="episode-item__watched-label">Sudah ditonton</span></span>' : '') +
       '<span class="episode-item__chev">' + icon('chevron') + '</span></button>';
   }).join('');
   box.querySelectorAll('.episode-item').forEach(function (btn) {

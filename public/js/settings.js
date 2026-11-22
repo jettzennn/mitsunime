@@ -1,7 +1,7 @@
 /* ============================================================
    settings.js — Halaman Setelan Akun Mitsunime (v1.3.3)
    Isi setelan yang tadinya menempel di halaman profil (v1.3.2):
-   Ganti Email, Ubah Password, Riwayat Transaksi. Dibuka dari
+   Ganti Email, Ubah Password. Dibuka dari
    popover akun di kaki sidebar (ikon gerigi + "Setelan akun").
    TIDAK ada tombol Keluar di sini — Keluar ada di popover
    sidebar yang sama (common.js, location.replace).
@@ -64,7 +64,6 @@ async function initSettings() {
   }
   initSettingsChangeEmail();
   initPasswordForm();
-  loadTransactions();
   if (typeof initPasswordToggles === 'function') initPasswordToggles(document);
   focusSettingsHash();
 }
@@ -190,63 +189,4 @@ function initPasswordForm() {
       errEl.textContent = (err && err.message) || 'Gagal mengubah password.';
     }
   });
-}
-
-/* ---------- Riwayat transaksi ---------- */
-function txStatusChip(tx) {
-  if (tx.status === 'approved') return '<span class="chip-status chip-status--ok">DISETUJUI</span>';
-  if (tx.status === 'rejected') return '<span class="chip-status chip-status--no">DITOLAK</span>';
-  return '<span class="chip-status chip-status--wait">MENUNGGU</span>';
-}
-function txPayChip(tx) {
-  if (tx.payment_status === 'paid') return '<span class="chip-status chip-status--paid">SUDAH DIBAYAR</span>';
-  if (tx.payment_status === 'expired' || tx.payment_status === 'failed') return '<span class="chip-status chip-status--unpaid">' + (tx.payment_status === 'expired' ? 'KADALUARSA' : 'GAGAL') + '</span>';
-  return '<span class="chip-status chip-status--unpaid">BELUM DIBAYAR</span>';
-}
-function txRowHTML(tx) {
-  var cls = tx.status === 'approved' ? 'tx-row--ok' : tx.status === 'rejected' ? 'tx-row--no' : 'tx-row--wait';
-  var html = '<div class="tx-row ' + cls + '"><div class="tx-row__body">' +
-    '<p class="tx-row__title">' + esc(tx.plan_name || 'Paket Premium') + ' — ' + esc(fmtRupiah(tx.amount_idr)) + '</p>' +
-    '<p class="tx-row__meta">' + esc(fmtDateTime(tx.created_at)) + ' · ' + esc(tx.method || 'midtrans') + '</p>' +
-    /* v1.3.0: harga asli + kode diskon bila transaksi memakai kode. */
-    (tx.original_amount_idr && tx.original_amount_idr !== tx.amount_idr
-      ? '<p class="tx-row__meta">Diskon ' + esc(tx.discount_code || '') + ' (' + esc(tx.discount_percent) + '%): dari ' + esc(fmtRupiah(tx.original_amount_idr)) + '</p>' : '') +
-    (tx.note ? '<p class="tx-row__note">Catatan admin: ' + esc(tx.note) + '</p>' : '') +
-    '</div><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' + txStatusChip(tx) + txPayChip(tx);
-  if (tx.status === 'pending' && tx.payment_status === 'unpaid' && tx.payment_url) {
-    html += '<a class="btn btn-primary btn-sm" href="' + esc(tx.payment_url) + '" target="_blank" rel="noopener">Bayar</a>';
-    html += '<button class="btn btn-ghost btn-sm" type="button" data-confirm-tx="' + esc(tx.id) + '">Cek Status</button>';
-  }
-  html += '</div></div>';
-  return html;
-}
-
-async function loadTransactions() {
-  var list = document.getElementById('tx-list');
-  if (!list) return;
-  try {
-    var res = await apiMyTransactions();
-    if (!res.data.length) {
-      list.innerHTML = stateHTML('empty', 'Belum ada transaksi', 'Kamu belum pernah mengajukan transaksi Premium.', 'Lihat Paket Premium', '/premium.html');
-      return;
-    }
-    list.innerHTML = res.data.map(txRowHTML).join('');
-    list.querySelectorAll('[data-confirm-tx]').forEach(function (btn) {
-      btn.addEventListener('click', async function () {
-        var id = btn.getAttribute('data-confirm-tx');
-        btn.disabled = true;
-        try {
-          var out = await apiConfirmTransaction(id);
-          showToast((out && out.message) || 'Status pembayaran diperbarui.');
-          loadTransactions();
-        } catch (err) {
-          showToast((err && err.message) || 'Gagal mengecek status.', 'error');
-        } finally {
-          btn.disabled = false;
-        }
-      });
-    });
-  } catch (err) {
-    list.innerHTML = stateHTML('error', 'Riwayat transaksi gagal dimuat', (err && err.message) || 'Terjadi kesalahan.');
-  }
 }

@@ -4,7 +4,7 @@
    SUB INDO (hanya bila sub_indo = 1, sudah diverifikasi admin) +
    daftar episode bernomor + tombol Daftar Saya.
    TIDAK ada konten terkunci di v1: semua episode bisa ditonton
-   pengguna yang sudah login, premium atau bukan.
+   pengguna yang sudah login.
    ============================================================ */
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -20,7 +20,8 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 var PAGE_SIZE = 50;
-var detail = { anime: null, episodes: [], shown: PAGE_SIZE, jump: 0, asc: true, fav: false, loggedIn: false, progress: {} };
+var EP_SEARCH_MAX = 100; /* v1.5.8 item 50: hasil pencarian yang ditampilkan */
+var detail = { anime: null, episodes: [], shown: PAGE_SIZE, asc: true, fav: false, loggedIn: false, progress: {}, query: '', searchBound: false };
 
 async function initDetail(id) {
   var root = document.getElementById('detail-root');
@@ -162,57 +163,130 @@ async function loadProgress() {
 }
 
 /* ---------- Daftar episode ---------- */
+
+/* v1.5.8 item 49: ambang ditonton klien ≥90% (server memakai 95% — lihat
+   diagnosis-item49.md). Tamu: hanya penanda lokal. */
+function isEpisodeWatchedDetail(ep) {
+  var prog = detail.progress[ep.number];
+  var pct = prog && typeof prog.percent === 'number' ? prog.percent : null;
+  if (pct !== null && pct >= 90) return true;
+  if (prog && prog.watched) return true;
+  return isEpisodeWatchedLocal(detail.anime.id, ep.number);
+}
+
+function episodeItemHTML(ep) {
+  var watched = isEpisodeWatchedDetail(ep);
+  return '<a class="episode-item' + (watched ? ' is-watched' : '') + '" href="/watch.html?id=' + encodeURIComponent(detail.anime.id) + '&ep=' + ep.number + '">' +
+    '<span class="episode-item__num">' + esc(ep.number) + '</span>' +
+    '<span class="episode-item__body">' +
+      '<span class="episode-item__title">' + esc(ep.title || ('Episode ' + ep.number)) + '</span>' +
+      (ep.jp_title ? '<span class="episode-item__sub">' + esc(ep.jp_title) + '</span>' : '') +
+    '</span>' +
+    (watched ? '<span class="episode-item__watched" title="Sudah ditonton">' + icon('check') + '<span class="episode-item__watched-label">Sudah ditonton</span></span>' : '') +
+    '<span class="episode-item__chev">' + icon('chevron') + '</span></a>';
+}
+
+/* v1.5.8 item 50: cocokkan episode dengan kueri — nomor ("12" cocok
+   dengan 12, 120–129) atau potongan judul (tidak peka huruf besar). */
+function episodeMatchesQuery(ep, q) {
+  if (!q) return true;
+  if (String(ep.number).indexOf(q) !== -1) return true;
+  var needle = q.toLowerCase();
+  if ((ep.title || '').toLowerCase().indexOf(needle) !== -1) return true;
+  return (ep.jp_title || '').toLowerCase().indexOf(needle) !== -1;
+}
+
+var _epSearchTimer = null;
+function bindEpisodeSearch() {
+  if (detail.searchBound) return;
+  var input = document.getElementById('ep-search');
+  var clearBtn = document.getElementById('ep-search-clear');
+  var iconEl = document.getElementById('ep-search-icon');
+  if (!input) return;
+  detail.searchBound = true;
+  if (iconEl) iconEl.innerHTML = icon('search');
+  function applyQuery() {
+    detail.query = input.value.trim();
+    detail.shown = PAGE_SIZE;
+    renderEpisodeList();
+  }
+  input.addEventListener('input', function () {
+    if (clearBtn) clearBtn.hidden = !input.value;
+    if (_epSearchTimer) clearTimeout(_epSearchTimer);
+    _epSearchTimer = setTimeout(applyQuery, 150);
+  });
+  input.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (_epSearchTimer) { clearTimeout(_epSearchTimer); _epSearchTimer = null; }
+    applyQuery();
+    /* Enter membuka episode pertama yang cocok (urut tampil saat ini). */
+    var list = detail.episodes.slice();
+    list.sort(function (x, y) { return detail.asc ? (x.number - y.number) : (y.number - x.number); });
+    for (var i = 0; i < list.length; i++) {
+      if (episodeMatchesQuery(list[i], detail.query)) {
+        window.location.href = '/watch.html?id=' + encodeURIComponent(detail.anime.id) + '&ep=' + list[i].number;
+        return;
+      }
+    }
+  });
+  if (clearBtn) clearBtn.addEventListener('click', function () {
+    input.value = '';
+    clearBtn.hidden = true;
+    if (_epSearchTimer) { clearTimeout(_epSearchTimer); _epSearchTimer = null; }
+    detail.query = '';
+    detail.shown = PAGE_SIZE;
+    renderEpisodeList();
+    input.focus();
+  });
+}
+
 function renderEpisodeList() {
   var sec = document.getElementById('sec-episodes');
   var box = document.getElementById('episode-list');
   var btnMore = document.getElementById('btn-more-episodes');
-  var jumpSel = document.getElementById('ep-jump-select');
-  var jumpInfo = document.getElementById('ep-jump-info');
+  var searchInfo = document.getElementById('ep-search-info');
   var countEl = document.getElementById('ep-count');
   if (!sec || !box) return;
   var list = detail.episodes.slice();
   list.sort(function (x, y) { return detail.asc ? (x.number - y.number) : (y.number - x.number); });
   sec.hidden = false;
   if (countEl) countEl.textContent = list.length ? list.length + ' episode' : '';
+  bindEpisodeSearch();
   if (!list.length) {
     box.innerHTML = stateHTML('empty', 'Belum ada episode', 'Daftar episode belum tersedia untuk judul ini.');
     if (btnMore) btnMore.hidden = true;
-    if (jumpSel) jumpSel.hidden = true;
+    if (searchInfo) searchInfo.textContent = '';
     return;
   }
-  var totalPages = Math.ceil(list.length / PAGE_SIZE);
-  if (jumpSel) {
-    var opts = '';
-    for (var p = 0; p < totalPages; p++) {
-      opts += '<option value="' + p + '"' + (p === detail.jump ? ' selected' : '') + '>Ep ' + list[p * PAGE_SIZE].number + '–' + list[Math.min((p + 1) * PAGE_SIZE, list.length) - 1].number + '</option>';
+  var q = detail.query;
+  var filtered = q ? list.filter(function (ep) { return episodeMatchesQuery(ep, q); }) : list;
+  var shown;
+  if (q) {
+    /* Mode cari: tampilkan hingga 100 hasil pertama + hitungan jujur;
+       tanpa "Muat lagi" (data sudah di klien — nol request per ketikan). */
+    shown = filtered.slice(0, EP_SEARCH_MAX);
+    if (searchInfo) {
+      searchInfo.textContent = filtered.length
+        ? 'Menampilkan ' + shown.length + ' dari ' + filtered.length + ' episode'
+        : 'Tidak ada episode yang cocok dengan "' + q + '"';
     }
-    jumpSel.innerHTML = opts;
-    jumpSel.hidden = totalPages <= 1;
-    jumpSel.onchange = function () {
-      detail.jump = parseInt(jumpSel.value, 10) || 0;
-      detail.shown = PAGE_SIZE;
-      renderEpisodeList();
-    };
+    if (btnMore) btnMore.hidden = true;
+  } else {
+    shown = filtered.slice(0, detail.shown);
+    if (searchInfo) {
+      searchInfo.textContent = shown.length
+        ? 'Menampilkan Ep ' + shown[0].number + '–' + shown[shown.length - 1].number + ' dari ' + list.length + ' episode'
+        : '';
+    }
+    if (btnMore) {
+      btnMore.hidden = detail.shown >= list.length;
+      btnMore.onclick = function () { detail.shown += PAGE_SIZE; renderEpisodeList(); };
+    }
   }
-  var start = detail.jump * PAGE_SIZE;
-  var shown = list.slice(start, start + detail.shown);
-  if (jumpInfo) jumpInfo.textContent = 'Menampilkan Ep ' + shown[0].number + '–' + shown[shown.length - 1].number + ' dari ' + list.length + ' episode';
-  box.innerHTML = shown.map(function (ep) {
-    var prog = detail.progress[ep.number];
-    var watched = (prog && prog.watched) || isEpisodeWatchedLocal(detail.anime.id, ep.number);
-    return '<a class="episode-item" href="/watch.html?id=' + encodeURIComponent(detail.anime.id) + '&ep=' + ep.number + '">' +
-      '<span class="episode-item__num">' + esc(ep.number) + '</span>' +
-      '<span class="episode-item__body">' +
-        '<span class="episode-item__title">' + esc(ep.title || ('Episode ' + ep.number)) + '</span>' +
-        (ep.jp_title ? '<span class="episode-item__sub">' + esc(ep.jp_title) + '</span>' : '') +
-      '</span>' +
-      (watched ? '<span class="episode-item__watched" title="Sudah ditonton">' + icon('check') + '</span>' : '') +
-      '<span class="episode-item__chev">' + icon('chevron') + '</span></a>';
-  }).join('');
-  if (btnMore) {
-    btnMore.hidden = (start + detail.shown) >= list.length;
-    btnMore.onclick = function () { detail.shown += PAGE_SIZE; renderEpisodeList(); };
-  }
+  box.innerHTML = shown.length
+    ? shown.map(episodeItemHTML).join('')
+    : stateHTML('empty', 'Tidak ada episode', 'Tidak ada episode yang cocok dengan pencarian ini.');
   var sortBtn = document.getElementById('btn-ep-sort');
   if (sortBtn) {
     sortBtn.textContent = detail.asc ? 'Urutan: Naik' : 'Urutan: Turun';

@@ -70,6 +70,13 @@ function findUserById(id) {
   ).get(id) || null;
 }
 
+function findUserByGoogleId(googleId) {
+  if (!googleId) return null;
+  return dbModule.get().prepare(
+    'SELECT * FROM users WHERE google_id = ?',
+  ).get(googleId) || null;
+}
+
 function countAdmins() {
   return dbModule.get().prepare(
     "SELECT COUNT(*) AS c FROM users WHERE role = 'admin'",
@@ -82,6 +89,54 @@ function createUser({ username, email, password, role = 'user' }) {
     'INSERT INTO users (username, email, password_hash, role, created_at) VALUES (?, ?, ?, ?, ?)',
   ).run(username, email || null, hashPassword(password), role, now);
   return findUserById(result.lastInsertRowid);
+}
+
+// Buat akun baru dari profil Google (v1.5.7, item 37): email sudah
+// terverifikasi oleh Google (email_verified=1, tanpa OTP); provider =
+// 'google'. Password diisi hash scrypt dari string acak 64 karakter
+// yang dibuat di sini dan TIDAK disimpan di mana pun — login password
+// untuk akun ini tidak bisa ditebak; bila pemilik mau password, ia
+// memakai lupa password (reset lewat OTP email tetap jalan).
+// googleId = nilai `sub` Google (stabil per akun); avatarUrl = URL
+// foto Google (boleh null bila akun Google tanpa foto).
+function createGoogleUser({ username, email, googleId, avatarUrl }) {
+  const randomPassword = crypto.randomBytes(32).toString('hex');
+  const now = Math.floor(Date.now() / 1000);
+  const result = dbModule.get().prepare(
+    `INSERT INTO users (username, email, password_hash, role, email_verified,
+       google_id, avatar_url, provider, created_at)
+     VALUES (?, ?, ?, 'user', 1, ?, ?, 'google', ?)`,
+  ).run(username, email, hashPassword(randomPassword), googleId, avatarUrl || null, now);
+  return findUserById(result.lastInsertRowid);
+}
+
+// Tautkan akun password yang sudah ada ke Google (v1.5.7, item 37):
+// Google sudah membuktikan kepemilikan email itu, jadi penautan aman.
+// Provider TETAP 'password' (login password tetap berfungsi; kedua
+// cara masuk berlaku). email_verified disetel 1. avatar_url hanya
+// ditulis bila Google memberi foto (jangan menimpa foto yang sudah
+// ada dengan NULL).
+function linkGoogleAccount(userId, googleId, avatarUrl) {
+  const db = dbModule.get();
+  if (avatarUrl) {
+    db.prepare(
+      'UPDATE users SET google_id = ?, avatar_url = ?, email_verified = 1 WHERE id = ?',
+    ).run(googleId, avatarUrl, userId);
+  } else {
+    db.prepare(
+      'UPDATE users SET google_id = ?, email_verified = 1 WHERE id = ?',
+    ).run(googleId, userId);
+  }
+  return findUserById(userId);
+}
+
+// Perbarui foto Google pengguna yang masuk ulang lewat Google (foto
+// bisa berubah di akun Google-nya). Hanya bila ada foto baru.
+function updateGoogleAvatar(userId, avatarUrl) {
+  if (!avatarUrl) return;
+  dbModule.get().prepare(
+    'UPDATE users SET avatar_url = ? WHERE id = ?',
+  ).run(avatarUrl, userId);
 }
 
 function touchLastLogin(userId) {
@@ -104,12 +159,16 @@ function publicUser(row) {
     // Verifikasi email OTP (v1.3.0): 1 = sudah terverifikasi.
     email_verified: row.email_verified ? 1 : 0,
     role: row.role,
-    is_premium: row.is_premium ? 1 : 0,
-    premium_until: row.premium_until,
     // Level + EXP (v1.3.1): total EXP; level dihitung di services/levels.
     exp_total: row.exp_total || 0,
     // Avatar preset profil (v1.3.2): kode preset atau null (= default).
     avatar: row.avatar || null,
+    // Login Google (v1.5.7, item 37): URL foto Google (null = tidak
+    // ada foto → avatar huruf) + provider ('password' / 'google').
+    // Frontend memakai avatar_url untuk menampilkan foto Google dan
+    // menyembunyikan pemilih preset bila foto Google terisi.
+    avatar_url: row.avatar_url || null,
+    provider: row.provider || 'password',
     created_at: row.created_at,
     last_login_at: row.last_login_at,
   };
@@ -201,7 +260,8 @@ function pruneExpiredSessions() {
 
 module.exports = {
   hashPassword, verifyPassword,
-  findUserByUsername, findUserByEmail, findUserById, countAdmins, createUser,
+  findUserByUsername, findUserByEmail, findUserById, findUserByGoogleId, countAdmins,
+  createUser, createGoogleUser, linkGoogleAccount, updateGoogleAvatar,
   touchLastLogin, changePassword, publicUser,
   createSession, getSessionUser, deleteSession, deleteUserSessions,
   setSessionCookie, clearSessionCookie,

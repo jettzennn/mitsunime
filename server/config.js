@@ -77,13 +77,6 @@ module.exports = {
   // posoposa3 berubah menjadi faygo setelah login admin + refresh).
   ADMIN_COOKIE_NAME: process.env.ADMIN_COOKIE_NAME || 'mitsunime_admin_session',
   COOKIE_SECURE: (process.env.COOKIE_SECURE || 'false').toLowerCase() === 'true',
-  // --- Gateway pembayaran (keputusan pengguna 2026-11-15: Midtrans sandbox) ---
-  // Adapter dipilih lewat PAYMENT_GATEWAY; nilainya 'midtrans' dan kunci di .env.
-  // Bila pengguna nanti bilang Xendit, tambah adapter xendit dengan antarmuka
-  // yang sama dan ganti nilai ini — tanpa mengubah route premium.
-  PAYMENT_GATEWAY: (process.env.PAYMENT_GATEWAY || 'midtrans').trim().toLowerCase(),
-  MIDTRANS_SERVER_KEY: (process.env.MIDTRANS_SERVER_KEY || '').trim(),
-  MIDTRANS_CLIENT_KEY: (process.env.MIDTRANS_CLIENT_KEY || '').trim(),
   // --- Email verifikasi OTP (v1.3.0) ---
   // Semua kosong secara default = verifikasi NONAKTIF (register/login
   // jalan seperti v1.2.0). Aktif hanya bila ketiganya terisi: host, user,
@@ -105,8 +98,6 @@ module.exports = {
   // kirim lewat chat atau tulis ke file yang dibagikan.
   ADMIN_USER: (process.env.ADMIN_USER || '').trim(),
   ADMIN_PASS: process.env.ADMIN_PASS || '',
-  // 'true' = sandbox (app.sandbox.midtrans.com), 'false' = produksi.
-  MIDTRANS_SANDBOX: (process.env.MIDTRANS_SANDBOX || 'true').toLowerCase() !== 'false',
   // Terjemahan sinopsis v1.2.0 (opsional): alamat email untuk parameter
   // &de= MyMemory — BUKAN kunci/API key, hanya penanda pemakaian yang
   // menaikkan kuota gratis MyMemory dari 5.000 menjadi 50.000 karakter
@@ -114,10 +105,15 @@ module.exports = {
   // per IP sehingga bisa habis). Isi di .env bila kuota anonim sering
   // habis; jangan tulis email orang lain.
   MYMEMORY_EMAIL: (process.env.MYMEMORY_EMAIL || '').trim(),
-  // TIDAK DIPAKAI di v1 (keputusan pengguna 2026-11-15 ~06:55 WIB): tidak ada
-  // kunci konten — episode baru 7 hari dan judul premium_only dari PRD
-  // TIDAK dipakai. Disimpan sebagai knob bila model kunci dihidupkan lagi.
-  PREMIUM_NEW_DAYS: num('PREMIUM_NEW_DAYS', 7),
+  // --- Login Google (v1.5.7, item 37) ---
+  // Client ID + Client Secret OAuth 2.0 dari Google Cloud Console
+  // (aplikasi Web; redirect URI: ${BASE_URL}/api/auth/google/callback).
+  // Keduanya KOSONG secara default = login Google NONAKTIF (endpoint
+  // mulai menolak 503, tombol Google tidak tampil). Secret adalah
+  // RAHASIA — jangan pernah tulis nilainya di file contoh, chat,
+  // panduan, atau ZIP; Faygo mengisinya sendiri di .env HP.
+  GOOGLE_CLIENT_ID: (process.env.GOOGLE_CLIENT_ID || '').trim(),
+  GOOGLE_CLIENT_SECRET: (process.env.GOOGLE_CLIENT_SECRET || '').trim(),
   // --- Sync katalog otomatis (v1.5.1, PRD §10) ---
   // Server menjalankan sync ringan sendiri tiap interval supaya banner
   // "Data mungkin tidak terbaru" tidak muncul. AUTO_SYNC=false mematikan

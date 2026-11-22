@@ -53,6 +53,29 @@ const DISPOSABLE_DOMAINS = new Set([
   'yopmail.net', 'zoemail.com',
 ]);
 
+// Domain email yang diizinkan untuk pendaftaran (v1.5.7, item 36 —
+// keputusan Faygo 2026-11-21): HANYA tiga keluarga ini — Google,
+// Yahoo, Microsoft. Daftar FINAL, tanpa tambahan diam-diam.
+// Pencocokan PERSIS (lihat isAllowedEmailDomain): subdomain dari
+// domain yang diizinkan pun DITOLAK (mis. mail.yahoo.com ditolak
+// walau yahoo.com diizinkan). Aturannya kebalikan dari daftar
+// sekali pakai di atas (yang cocok akhiran); di sini hanya persis
+// yang lolos.
+const ALLOWED_EMAIL_DOMAINS = new Set([
+  // Google
+  'gmail.com', 'googlemail.com',
+  // Yahoo
+  'yahoo.com', 'yahoo.co.id', 'yahoo.co.uk', 'ymail.com', 'rocketmail.com',
+  // Microsoft
+  'outlook.com', 'hotmail.com', 'live.com', 'msn.com', 'outlook.co.id',
+]);
+
+function isAllowedEmailDomain(email) {
+  const domain = domainOf(email);
+  if (!domain) return false;
+  return ALLOWED_EMAIL_DOMAINS.has(domain);
+}
+
 function domainOf(email) {
   if (typeof email !== 'string') return '';
   const at = email.lastIndexOf('@');
@@ -131,9 +154,18 @@ async function hasMxRecord(domain) {
 // Periksa email untuk pendaftaran. Mengembalikan null bila boleh lanjut,
 // atau pesan galat Bahasa Indonesia bila harus ditolak. Tidak pernah
 // mengirim email apa pun.
+//
+// Urutan (v1.5.7, item 36 — mengikat): allowlist DULU (murah, sinkron,
+// tanpa DNS) → lalu pemeriksaan lama (sekali pakai + MX) tetap jalan
+// sesudahnya untuk domain yang lolos allowlist. Allowlist berlaku di
+// pendaftaran DAN ganti email (keduanya memanggil fungsi ini);
+// TIDAK berlaku di login, reset password, dan login Google.
 async function checkRegistrationEmail(email) {
   const domain = domainOf(email);
   if (!domain) return 'Alamat email tidak valid.';
+  if (!isAllowedEmailDomain(email)) {
+    return 'Pendaftaran hanya menerima email Google, Yahoo, atau Microsoft (mis. Gmail, Yahoo Mail, Outlook). Subdomain tidak diterima.';
+  }
   if (isDisposableDomain(domain)) {
     return 'Alamat email sekali pakai tidak diterima. Gunakan alamat email asli Anda.';
   }
@@ -147,4 +179,4 @@ async function checkRegistrationEmail(email) {
   return null;
 }
 
-module.exports = { domainOf, isDisposableDomain, hasMxRecord, checkRegistrationEmail };
+module.exports = { domainOf, isDisposableDomain, isAllowedEmailDomain, hasMxRecord, checkRegistrationEmail };

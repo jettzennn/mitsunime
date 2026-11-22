@@ -21,16 +21,10 @@ let db = null;
 const ANIME_CACHE_COLUMNS = [
   ['sub_indo', 'INTEGER NOT NULL DEFAULT 0'],
   ['sub_indo_verified_at', 'INTEGER'],
-  ['premium_only', 'INTEGER NOT NULL DEFAULT 0'],
 ];
 
 // Kolom task-06/07 untuk DB yang dibuat sebelum tugas itu ada.
 const USERS_COLUMNS = [
-  ['equipped_border', 'INTEGER REFERENCES accessories(id)'],
-  ['equipped_background', 'INTEGER REFERENCES accessories(id)'],
-  ['equipped_frame', 'INTEGER REFERENCES accessories(id)'],
-  ['equipped_badge', 'INTEGER REFERENCES accessories(id)'],
-  ['equipped_name_effect', 'INTEGER REFERENCES accessories(id)'],
   // Verifikasi email OTP (v1.3.0): 0 = belum terverifikasi.
   ['email_verified', 'INTEGER NOT NULL DEFAULT 0'],
   // Level + EXP (v1.3.1).
@@ -38,20 +32,39 @@ const USERS_COLUMNS = [
   // Avatar preset profil (v1.3.2): kode preset, NULL = default.
   ['avatar', 'TEXT'],
 ];
-const TX_COLUMNS = [
-  ['payment_status', "TEXT NOT NULL DEFAULT 'unpaid'"],
-  ['gateway_order_id', 'TEXT'],
-  ['gateway_status', 'TEXT'],
-  ['payment_url', 'TEXT'],
-  // Alur manual QRIS (v1.1.0): nama file bukti bayar di data/proofs/
-  // (nama acak, tidak bisa ditebak). NULL bila transaksi Midtrans atau
-  // transaksi manual tanpa bukti gambar.
-  ['proof_file', 'TEXT'],
-  // Diskon (v1.3.0): kode + persen + harga asli sebelum diskon.
-  ['discount_code', 'TEXT'],
-  ['discount_percent', 'INTEGER'],
-  ['original_amount_idr', 'INTEGER'],
+
+// Kolom login Google (v1.5.7, item 37 — PRD §5.2): google_id = nilai
+// `sub` Google (stabil per akun); avatar_url = URL foto Google
+// (NULL = tidak ada foto → avatar huruf); provider = 'password'
+// (daftar biasa) atau 'google' (dibuat lewat Google). Akun password
+// yang DITAUTKAN ke Google tetap provider='password' (kedua cara
+// masuk berlaku) — lihat services/google.js.
+// CATATAN SQLite: ALTER TABLE ADD COLUMN TIDAK BISA membawa UNIQUE
+// ("Cannot add a UNIQUE column") — keunikan google_id ditegakkan
+// lewat indeks unik (migrateGoogleIdIndex di bawah; jaminan sama,
+// NULL ganda tetap diizinkan). PRD §5.2 menulis `google_id TEXT
+// UNIQUE` untuk skema baru; perilaku yang ditegakkan identik.
+const USERS_GOOGLE_COLUMNS = [
+  ['google_id', 'TEXT'],
+  ['avatar_url', 'TEXT'],
+  ['provider', "TEXT NOT NULL DEFAULT 'password' CHECK (provider IN ('password', 'google'))"],
 ];
+
+// Indeks unik google_id (lihat catatan di atas). Idempotent: hanya
+// dibuat bila belum ada (tanpa log tiap boot).
+function migrateGoogleIdIndex() {
+  const exists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'",
+  ).get();
+  if (!exists) return;
+  const idx = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_users_google_id'",
+  ).get();
+  if (!idx) {
+    db.exec('CREATE UNIQUE INDEX idx_users_google_id ON users(google_id)');
+    logger.info('Migrasi: indeks unik idx_users_google_id dibuat');
+  }
+}
 
 function migrateTable(table, columns) {
   // Bila tabel belum ada (DB baru — tabel dibuat sesudahnya oleh schema),
@@ -71,100 +84,78 @@ function migrateTable(table, columns) {
   }
 }
 
+// v1.5.7 (item 35): hapus data fitur yang sudah tidak ada — 6 tabel,
+// 8 kolom, 3 kunci settings. Idempotent: DROP TABLE IF EXISTS,
+// hapus kolom HANYA bila PRAGMA table_info masih menemukannya
+// (SQLite tidak punya DROP COLUMN IF EXISTS), dan DELETE kunci
+// settings bila tabel settings sudah ada. Aman dijalankan berulang
+// dan aman di DB baru yang sudah bersih (semua pemeriksaan no-op).
+// Urutan di dalam dropRemovedData penting: kolom users.equipped_*
+// dihapus DULU (membawa FOREIGN KEY ke accessories), baru tabel
+// di-drop — dan FK dimatikan sementara selama blok itu, karena
+// node:sqlite mengaktifkan foreign_keys secara default.
+const DROPPED_TABLES = [
+  'plans', 'discount_codes', 'premium_transactions',
+  'accessories', 'user_accessories', 'plan_accessories',
+];
+const DROPPED_COLUMNS = [
+  ['users', 'is_premium'],
+  ['users', 'premium_until'],
+  ['users', 'equipped_border'],
+  ['users', 'equipped_background'],
+  ['users', 'equipped_frame'],
+  ['users', 'equipped_badge'],
+  ['users', 'equipped_name_effect'],
+  ['anime_cache', 'premium_only'],
+];
+const DROPPED_SETTING_KEYS = ['premium_new_days', 'payment_gateway', 'payment_methods'];
+
+function dropRemovedData() {
+  // Urutan penting + FK dimatikan sementara: kolom users.equipped_*
+  // punya FOREIGN KEY ke accessories(id) — DROP TABLE accessories
+  // gagal selama kolom itu masih ada (node:sqlite mengaktifkan
+  // foreign_keys secara default). Hapus kolom dulu, baru tabel;
+  // matikan FK selama blok ini, lalu kembalikan seperti semula.
+  const fkBefore = db.prepare('PRAGMA foreign_keys').get().foreign_keys;
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    for (const [table, column] of DROPPED_COLUMNS) {
+      const exists = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      ).get(table);
+      if (!exists) continue;
+      const cols = new Set(
+        db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name),
+      );
+      if (cols.has(column)) {
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+        logger.info(`Migrasi: kolom ${table}.${column} dihapus`);
+      }
+    }
+    for (const table of DROPPED_TABLES) {
+      db.exec(`DROP TABLE IF EXISTS ${table}`);
+    }
+    const settingsExists = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'",
+    ).get();
+    if (settingsExists) {
+      const placeholders = DROPPED_SETTING_KEYS.map(() => '?').join(', ');
+      const info = db.prepare(
+        `DELETE FROM settings WHERE key IN (${placeholders})`,
+      ).run(...DROPPED_SETTING_KEYS);
+      if (info.changes > 0) logger.info(`Migrasi: ${info.changes} kunci settings lama dihapus`);
+    }
+  } finally {
+    db.exec(`PRAGMA foreign_keys = ${fkBefore ? 'ON' : 'OFF'}`);
+  }
+}
+
 function migrate() {
   migrateTable('anime_cache', ANIME_CACHE_COLUMNS);
   migrateTable('users', USERS_COLUMNS);
-  migrateTable('premium_transactions', TX_COLUMNS);
-  migratePlans();
-  migratePlanAccessories();
-  migratePaymentGatewayDefault();
-}
-
-// v1.2.0: paket tambahan untuk DB yang sudah ada (DB baru sudah dapat
-// seed yang sama dari schema.sql — migrasi ini idempotent dan aman
-// dijalankan berulang, berbasis nama paket supaya tidak duplikasi dan
-// tidak bentrok dengan paket buatan admin).
-const NEW_PLANS_V120 = [
-  ['Premium 7 Hari', 10000, 7,
-    'Aksesori profil premium: bingkai dan latar profil (6 aksesori) selama 7 hari. Tidak ada konten yang terkunci.'],
-  ['Premium 15 Hari', 19000, 15,
-    'Aksesori profil premium: bingkai, latar, dan bingkai avatar (9 aksesori) selama 15 hari. Tidak ada konten yang terkunci.'],
-];
-
-function migratePlans() {
-  const exists = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plans'",
-  ).get();
-  if (!exists) return;
-  const stmt = db.prepare(`INSERT INTO plans (name, price_idr, duration_days, description)
-    SELECT ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM plans WHERE name = ?)`);
-  for (const [name, price, days, desc] of NEW_PLANS_V120) {
-    const info = stmt.run(name, price, days, desc, name);
-    if (info.changes) logger.info(`Migrasi: paket "${name}" ditambahkan`);
-  }
-  // Tiering v1.2.0: deskripsi paket 7/15 hari diperbarui mengikuti tier
-  // benefit — HANYA bila deskripsi masih teks v1.2.0 lama. Edit admin
-  // tidak pernah ditimpa (syarat description = teks lama).
-  const DESC_UPDATES_V120 = [
-    ['Premium 7 Hari',
-      'Aksesori profil premium: bingkai dan latar profil (6 aksesori) selama 7 hari. Tidak ada konten yang terkunci.',
-      'Aksesori profil premium: border, background, bingkai avatar, lencana, dan efek nama selama 7 hari. Tidak ada konten yang terkunci.'],
-    ['Premium 15 Hari',
-      'Aksesori profil premium: bingkai, latar, dan bingkai avatar (9 aksesori) selama 15 hari. Tidak ada konten yang terkunci.',
-      'Aksesori profil premium: border, background, bingkai avatar, lencana, dan efek nama selama 15 hari. Tidak ada konten yang terkunci.'],
-  ];
-  const upd = db.prepare('UPDATE plans SET description = ? WHERE name = ? AND description = ?');
-  for (const [name, next, prev] of DESC_UPDATES_V120) {
-    const info = upd.run(next, name, prev);
-    if (info.changes) logger.info(`Migrasi: deskripsi paket "${name}" diperbarui (tiering)`);
-  }
-}
-
-// v1.2.0 (tiering benefit): pemetaan paket → aksesori. Idempotent,
-// berbasis nama paket (id paket bisa berbeda di tiap DB) + PRIMARY KEY
-// (plan_id, accessory_id) — dijalankan di setiap startup, restart
-// berkali-kali tidak menduplikasi. Rentang id aksesori 1-14 tetap dari
-// seed schema.sql (border 1-3, background 4-6, frame 7-9, badge 10-12,
-// efek nama 13-14).
-const PLAN_ACCESSORIES_V120 = [
-  ['Premium 7 Hari', 1, 6],
-  ['Premium 15 Hari', 1, 9],
-  ['Premium 1 Bulan', 1, 14],
-];
-
-function migratePlanAccessories() {
-  const exists = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plan_accessories'",
-  ).get();
-  if (!exists) return;
-  const stmt = db.prepare(`INSERT OR IGNORE INTO plan_accessories (plan_id, accessory_id)
-    SELECT p.id, a.id FROM plans p, accessories a
-    WHERE p.name = ? AND a.id BETWEEN ? AND ?`);
-  for (const [name, from, to] of PLAN_ACCESSORIES_V120) {
-    const info = stmt.run(name, from, to);
-    if (info.changes) logger.info(`Migrasi: pemetaan aksesori paket "${name}" ditambahkan (${info.changes} baris)`);
-  }
-}
-
-// v1.1.0: cara bayar default menjadi MANUAL QRIS (keputusan pengguna
-// 2026-11-15 ~07:52 WIB). Kunci settings payment_gateway TIDAK PERNAH
-// dibaca kode apa pun di v1.0.0 — bukan bagian whitelist PUT dashboard
-// dan config memakai .env PAYMENT_GATEWAY — jadi nilainya di DB lama
-// pasti berasal dari seed ('midtrans'), bukan pilihan admin. Aman
-// dialihkan ke 'manual' saat upgrade; admin yang mau Midtrans bisa
-// mengubahnya kembali dari dashboard (PUT settings).
-function migratePaymentGatewayDefault() {
-  const exists = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'settings'",
-  ).get();
-  if (!exists) return;
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'payment_gateway'").get();
-  if (row && row.value === 'midtrans') {
-    db.prepare(
-      "UPDATE settings SET value = 'manual', updated_at = ? WHERE key = 'payment_gateway'",
-    ).run(Math.floor(Date.now() / 1000));
-    logger.info('Migrasi: payment_gateway dialihkan ke manual (default v1.1.0)');
-  }
+  migrateTable('users', USERS_GOOGLE_COLUMNS);
+  migrateGoogleIdIndex();
+  dropRemovedData();
 }
 
 function init(dbPath) {
@@ -176,8 +167,8 @@ function init(dbPath) {
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   // URUTAN PENTING: migrate() dulu SEBELUM schema, lalu sesudahnya.
   // DB lama yang dibuat dari skema sebelum task-06/07 belum punya kolom
-  // baru (mis. premium_transactions.gateway_order_id), sementara schema.sql
-  // membuat indeks di atas kolom itu — bila kolom belum ada, exec(schema)
+  // baru (mis. users.email_verified), sementara schema.sql membuat
+  // indeks di atas kolom itu — bila kolom belum ada, exec(schema)
   // gagal dengan "no such column". migrate() pertama (no-op untuk DB baru,
   // karena tabel belum ada) menambahkan kolom ke tabel lama; migrate()
   // kedua bersifat idempotent dan melengkapi bila ada yang terlewat.

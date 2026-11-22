@@ -10,7 +10,7 @@
      background_image, description, score, status, year, aired,
      season, duration, source, rating, s_id,
      is_sub, is_dub, terms_by_type { genre, studios, type },
-     sub_indo (0/1, flag admin), premium_only (0/1, data saja di v1),
+     sub_indo (0/1, flag admin),
      next_air_schedule_time, next_air_ep, updated_at }
    (mal_id/ani_id TIDAK ada di payload publik — keduanya bahan
    pembangun URL fallback MegaPlay, hanya diberikan lewat endpoint
@@ -169,6 +169,10 @@ function apiLogin(email, password) {
 }
 function apiLogout() { return apiPost('/api/logout', {}); }
 function apiMe() { return apiGet('/api/me'); }
+/* Login Google (v1.5.7, item 37): cek apakah login Google
+   dikonfigurasi di server — hanya { configured: true|false }
+   (TIDAK PERNAH mengembalikan client id / secret). */
+function apiGoogleConfig() { return apiGet('/api/auth/google/config'); }
 function apiChangePassword(current, next) {
   return apiPost('/api/change-password', { current: current, 'new': next });
 }
@@ -198,7 +202,7 @@ function apiWatchComplete(animeId, episode) {
 }
 /* Ubah profil (v1.3.2): { avatar?, username? } — avatar salah satu dari
    8 preset atau null (kembali ke avatar huruf default). Mengembalikan
-   { user, premium, level }. Sesi tetap berlaku setelah ganti nama. */
+   { user, level }. Sesi tetap berlaku setelah ganti nama. */
 function apiUpdateProfile(body) {
   return apiPost('/api/account/profile', body || {});
 }
@@ -220,34 +224,6 @@ function apiSaveContinue(animeId, episode, positionSec, durationSec) {
   return apiPost('/api/continue', { anime_id: animeId, episode: episode, position_sec: positionSec, duration_sec: durationSec });
 }
 function apiRemoveContinue(animeId) { return apiDelete('/api/continue/' + encodeURIComponent(animeId)); }
-
-/* --- Premium & aksesori --- */
-function apiPlans() { return apiGet('/api/plans').then(normalizeList); }
-function apiPremiumStatus() { return apiGet('/api/premium/status'); }
-/* Info bayar manual (v1.1.0): { payment_gateway, payment_methods,
-   merchant_name, has_qris } — dipakai halaman Premium untuk memilih
-   alur yang ditampilkan (manual QRIS atau Midtrans). */
-function apiQrisInfo() { return apiGet('/api/premium/qris'); }
-/* Buat transaksi manual QRIS (v1.1.0): proofRef teks (opsional),
-   proofImage data URL/base64 JPG/PNG/WebP maks. 2 MB (opsional).
-   v1.3.0: discountCode opsional — harga yang disimpan adalah harga
-   setelah diskon. */
-function apiCreateManualTransaction(planId, proofRef, proofImage, discountCode) {
-  return apiPost('/api/premium/transactions/manual', { plan_id: planId, proof_ref: proofRef || '', proof_image: proofImage || null, discount_code: discountCode || undefined });
-}
-/* v1.3.0: discountCode opsional, sama seperti di atas. */
-function apiCreateTransaction(planId, discountCode) { return apiPost('/api/premium/transactions', { plan_id: planId, discount_code: discountCode || undefined }); }
-/* Cek kode diskon (v1.3.0): TIDAK memakai kode — pemakaian dicatat
-   saat transaksi dibuat. Mengembalikan { code, percent,
-   original_price, final_price, plan_id }. */
-function apiValidateDiscount(planId, code) {
-  return apiPost('/api/premium/discounts/validate', { plan_id: planId, code: code });
-}
-function apiMyTransactions() { return apiGet('/api/premium/mine').then(normalizeList); }
-function apiConfirmTransaction(id) { return apiPost('/api/premium/transactions/' + encodeURIComponent(id) + '/confirm', {}); }
-function apiAccessories() { return apiGet('/api/accessories'); }
-function apiEquipAccessory(id) { return apiPost('/api/accessories/equip', { accessory_id: id }); }
-function apiUnequipAccessory(kind) { return apiPost('/api/accessories/unequip', { kind: kind }); }
 
 /* URL fallback player MegaPlay (mal → ani) TIDAK LAGI dibangun di sini:
    mal_id/ani_id sudah dihapus dari payload publik (perbaiki M2). URL

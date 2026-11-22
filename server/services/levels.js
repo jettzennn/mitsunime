@@ -9,12 +9,8 @@
 // - Setiap 100 EXP = 1 level: level = min(100, floor(exp_total/100)+1).
 // - Menonton: +10 EXP setiap menyelesaikan satu episode, hanya SEKALI
 //   per episode per pengguna (tonton ulang episode yang sama = 0 EXP).
-// - Beli premium (saat transaksi disetujui): 7 hari +100 EXP, 15 hari
-//   +250 EXP, 30 hari +500 EXP; paket custom durasi lain -> durasi x 10.
-// - Grant premium langsung dari admin (Beri Premium, bukan pembelian)
-//   TIDAK memberi EXP — jadi jalur itu tidak memanggil service ini.
 // SEMUA ANGKA EXP adalah konstanta di file ini (EXP_PER_EPISODE,
-// EXP_PER_LEVEL, MAX_USER_LEVEL, PURCHASE_EXP) supaya mudah diubah di
+// EXP_PER_LEVEL, MAX_USER_LEVEL) supaya mudah diubah di
 // update berikutnya tanpa menyentuh logika lain.
 // Nol dependensi; semua fungsi sinkron (node:sqlite).
 const dbModule = require('../db/database');
@@ -23,15 +19,6 @@ const EXP_PER_EPISODE = 10;
 const EXP_PER_LEVEL = 100;
 const MAX_USER_LEVEL = 100;
 const ADMIN_LEVEL = 1000;
-
-// EXP beli premium per durasi paket (paket custom: durasi x 10).
-const PURCHASE_EXP = { 7: 100, 15: 250, 30: 500 };
-
-function purchaseExpForDuration(durationDays) {
-  const d = Number(durationDays) || 0;
-  if (Object.prototype.hasOwnProperty.call(PURCHASE_EXP, d)) return PURCHASE_EXP[d];
-  return Math.max(0, d) * 10;
-}
 
 function levelFromExp(expTotal) {
   const exp = Math.max(0, Math.floor(expTotal || 0));
@@ -93,15 +80,8 @@ function awardWatchExp(userId, animeId, episode) {
   return { exp_gained: 0, exp_total: exp, level: levelFromExp(exp), leveled_up: false };
 }
 
-// EXP beli premium. Dipanggil HANYA dari jalur approve transaksi
-// (manual QRIS + Midtrans, tempat grantPremium dipanggil untuk
-// transaksi) — bukan dari Beri Premium admin.
-function awardPurchaseExp(userId, durationDays) {
-  return addExp(userId, purchaseExpForDuration(durationDays));
-}
-
 module.exports = {
   EXP_PER_EPISODE, EXP_PER_LEVEL, MAX_USER_LEVEL, ADMIN_LEVEL,
-  purchaseExpForDuration, levelFromExp, levelInfo,
-  addExp, awardWatchExp, awardPurchaseExp,
+  levelFromExp, levelInfo,
+  addExp, awardWatchExp,
 };
